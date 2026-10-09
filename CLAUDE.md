@@ -10,6 +10,18 @@ phones. It is also read and written by the team's Grok "Chief of Staff" bot.
 - `docs/ARCHITECTURE.md`: versions, folders, flows
 - `docs/SETUP.md`: accounts and keys
 
+## Next.js 16.4 is newer than most training data
+
+Read the relevant guide in `node_modules/next/dist/docs/` before writing Next code (see `AGENTS.md`).
+Key differences used here:
+
+- `cacheComponents` + `partialPrefetching` are on. Reading cookies or headers, Supabase queries, and
+  `new Date()` must happen inside a component wrapped in `<Suspense>`; otherwise the build fails.
+  Layouts stay static (the instant "shell"), and per-user data streams in.
+- Middleware is `src/proxy.ts` (Node runtime).
+- Call `refresh()` from `next/cache` in a server action to re-render the page after a write.
+- `typedRoutes` is on, so `<Link href>` must point at a real route.
+
 ## Stack
 
 - Next.js 16 (App Router; `src/proxy.ts`, not `middleware.ts`)
