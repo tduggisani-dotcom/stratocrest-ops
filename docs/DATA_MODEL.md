@@ -1,8 +1,8 @@
-# StratoCrest Ops — Data Model (Stage 0, proposed)
+# StratoCrest Ops — Data Model
 
-This is the reviewed version of the starting point in `docs/SPEC.md` §5. Once Stage 1 creates the
-migrations in `supabase/migrations/`, **the migrations become the source of truth** and this file is
-only an overview. The SQL below is a sketch for review, not a runnable migration.
+**Status: implemented in Stage 1** (`supabase/migrations/`). The migrations are the source of
+truth; this file is the readable overview. Where they differ, the migrations win. The SQL below is
+a sketch, not a runnable migration.
 
 ---
 
@@ -124,9 +124,9 @@ org_meetings ( +common,
   follow_up_owner_id uuid null → people, follow_up_date date null,
   check ((follow_up_owner_id is null) = (follow_up_date is null)))   -- both or neither
 
-org_meeting_attendees (                -- our side; replaces the spec's "attendees (person ids)" array
+org_meeting_attendees ( +common,       -- our side; replaces the spec's "attendees (person ids)" array
   org_meeting_id uuid → org_meetings on delete cascade,
-  person_id uuid → people, primary key (org_meeting_id, person_id))
+  person_id uuid → people, unique (org_meeting_id, person_id))   -- own id so the audit log can track it
 
 hypotheses ( +common,
   organization_id uuid null → organizations,                 -- null = applies across many orgs
@@ -159,7 +159,6 @@ tasks ( +common,
   key_result_id → key_results, synthe6_session_id → synthe6_sessions, organization_id → organizations,
   team_meeting_id → team_meetings, org_meeting_id → org_meetings, debrief_id → debriefs,   -- all uuid null
   completed_at timestamptz null,       -- set and cleared by trigger when status enters or leaves 'done'
-  overdue_notified_at timestamptz null,-- so task.overdue fires once (reset when due_date changes)
   archived_at timestamptz null)
 
 quarters (                             -- seeded from spec §6.8
@@ -235,7 +234,7 @@ debriefs ( +common,
   due_date date not null, status debrief_status not null default 'due',
   planned text null, actual text null, worked text null, change text null,
   facilitator_id uuid null → people,
-  completed_at timestamptz null, due_notified_at timestamptz null)
+  completed_at timestamptz null)
 ```
 
 ### 3.5 Checklists
@@ -295,9 +294,15 @@ usage_events (                         -- first-party analytics: no IP address, 
   kind text check (kind in ('page_view', 'feature_use')),
   section text not null, path text not null, feature text null)
 
-app_settings (key text pk, value jsonb not null, updated_at timestamptz)
+app_settings (key text pk, value jsonb not null, updated_at timestamptz)   -- server-only
 -- e.g. automation_start_date: automatic debriefs are only created for events on or after this date,
 --      so going live doesn't create a backlog of old debriefs
+
+event_dedupe (event text, entity_id uuid, dedupe_key text default '', created_at,
+              primary key (event, entity_id, dedupe_key))   -- server-only
+-- Remembers which scheduled events (task.overdue, debrief.due) were already sent, so the
+-- scheduled checks never send twice and never touch business rows. dedupe_key = the task's
+-- due date, so moving the date lets task.overdue fire again.
 ```
 
 ### 3.8 Bot API and integrations (built in Stage 6; tables listed now so the model is complete)
@@ -356,7 +361,7 @@ integration_runs (id bigint identity pk, job text not null,   -- sheets_mirror |
 | Name | What it is |
 |---|---|
 | `org_overview` view | Each org plus owner name and avatar, **latest past meeting** (date, rating, summary), **next upcoming meeting**, days since contact, `is_stale`, `follow_up_overdue`, and stage label and position. It powers the tracker table, the cards, the Kanban, CSV export, and `/summary/investors`. |
-| Stale | Stage outcome is `open` and `coalesce(last_contact_date, created_at::date) < today − 14`. |
+| Stale | Stage outcome is `open` and at least 14 days since `coalesce(last_contact_date, created_at::date)` (ET). |
 | Follow-up overdue | Stage outcome is `open` and `next_step_date < today`. An org's **follow-up** is its next step; the owner is the org owner. |
 | Debrief "due" | `status = 'due' and due_date <= today`. Future ones show as "Upcoming". |
 | `person_workload` view | Per active person: open tasks, overdue tasks, overdue follow-ups, meetings in the next 7 days, and debriefs due. A person is flagged when their total is ≥ 1.5× the team average **and** at least 3 above it. |
@@ -370,13 +375,16 @@ Triggers:
 
 1. **Common columns:** sets `updated_at`, `created_by` and `updated_by` from the current actor.
 2. **Audit:** after insert, update or delete on every business table, writes to `activity_log` (before, after, and changed fields). No-op updates are skipped.
-3. **Tasks:** fills or clears `completed_at`, and resets `overdue_notified_at` when `due_date` changes.
-4. **Org meetings:** move the org's `last_contact_date` forward when the meeting has happened, queue `org_meeting.logged`, and create the debrief (status `due`) once the meeting time has passed.
-5. **Organizations:** queue `org.created` on insert and `org.stage_changed` (from → to) when the stage changes.
+3. **Tasks:** fills or clears `completed_at`.
+4. **Org meetings:** move the org's `last_contact_date` forward when the meeting has happened, queue `org_meeting.logged`, and create the debrief (status `due`, due that day, facilitated by the org owner) once the meeting time has passed.
+5. **Organizations:** queue `org.created` on insert and `org.stage_changed` (from → to) when the stage changes. An org's `kind` can't change after it is created.
 6. **Help requests:** queue `help_request.created`.
 7. **Hypotheses:** copy `audience` from the linked org.
 8. **Key results:** at most 4 per objective.
-9. **People:** keep `actors.display_name` in sync with the person's name.
+9. **People:** create and sync the matching `actors` row, and link the login (`auth_user_id`) by email in either order (person first or login first).
+10. **Sunday meetings:** `starts_at` defaults to 9:00 AM ET on `meeting_date`. **Debriefs:** an org-meeting debrief's kind is copied from the org; `completed_at` follows status. **Checklist items:** ticking records who and when.
+
+Every text column also has a length limit (CHECK), so a bot can't store a megabyte in a name.
 
 Scheduled jobs (Supabase **pg_cron**, see `docs/ARCHITECTURE.md` §5):
 
@@ -384,8 +392,12 @@ Scheduled jobs (Supabase **pg_cron**, see `docs/ARCHITECTURE.md` §5):
   - Make sure next Sunday's meeting exists. The facilitator is the next active person by `sort_order` after the last meeting's facilitator.
   - Create due debriefs for Synthe6 sessions (not breaks) the day after they end, and for org meetings and Sunday meetings that have taken place.
   - Mark past Sunday meetings as `held`.
-  - Queue `debrief.due` and `task.overdue`, once per item.
-  - Prune old rate-limit windows.
+  - Move `last_contact_date` forward for meetings logged ahead of time that have now happened.
+  - Queue `debrief.due` and `task.overdue`, once per item (tracked in `event_dedupe`).
+
+  Synthe6 and Sunday-meeting debriefs only count from `app_settings.automation_start_date` (set by
+  the first `pnpm seed`). Org-meeting debriefs are always created, because people log those on purpose.
+  `public.run_scheduled_checks()` lets the server (secret key only) run the checks on demand.
 - **Every minute:** if webhook deliveries are waiting, call the app's dispatcher.
 - **Every 15 min:** call the app's Google Sheets and Calendar sync.
 
@@ -398,12 +410,17 @@ Scheduled jobs (Supabase **pg_cron**, see `docs/ARCHITECTURE.md` §5):
 | All business tables | select, insert, update (everyone can edit everything, per spec §2) | nothing | everything |
 | Hard delete | only `availability_blocks`, `crunch_periods`, `org_meeting_attendees`, `checklist_items`, unconverted `action_items`. Everything else is archived. | – | – |
 | `activity_log` | select | nothing | written only by the audit trigger |
-| `people`, `actors` | select; update `people` | nothing | insert (the invite flow also creates the login) |
-| `feedback`, `usage_events` | insert own rows; select | nothing | – |
+| `people`, `actors` | select; update `people` **profile fields only** (name, role, avatar, contact preference, strengths, skills) | nothing | insert, and changes to email, login link, rotation order, active flag |
+| `help_requests` | select, update; insert only as yourself (`requester_id` = you) | nothing | – |
+| `feedback`, `usage_events` | insert only as yourself; select | nothing | – |
 | `org_stages`, `quarters` | select | nothing | – |
-| `api_keys`, `api_rate_limits`, `webhooks`, `webhook_deliveries`, `calendar_event_links`, `integration_runs`, `app_settings` | **no direct access**. Settings pages read them through server code that first checks team membership, so key hashes and webhook secrets never reach a browser. | nothing | everything |
+| `app_settings`, `event_dedupe`, and in Stage 6 `api_keys`, `api_rate_limits`, `webhooks`, `webhook_deliveries`, `calendar_event_links`, `integration_runs` | **no direct access**. Settings pages read them through server code that first checks team membership, so key hashes and webhook secrets never reach a browser. | nothing | everything |
 
 ¹ "Team member" = `app.is_team_member()`: the login belongs to a `people` row with `is_active = true`.
+
+Table privileges start from nothing (Supabase's defaults, which include `TRUNCATE`, are revoked) and
+only what each row in this table needs is granted. `public.undo_activity()` runs with the caller's
+rights, so undo can't do anything the person couldn't do by hand.
 
 ## 7. Seed data (production-safe; spec §7)
 
@@ -431,3 +448,4 @@ Scheduled jobs (Supabase **pg_cron**, see `docs/ARCHITECTURE.md` §5):
 11. Tasks link to a Sunday meeting, an org meeting, or a debrief separately, because the spec's single "meeting_id" was ambiguous.
 12. **Archive instead of delete** on main records.
 13. Supporting tables for Stage 6 and Stage 7: `capture_drafts`, `webhook_deliveries`, `api_rate_limits`, `calendar_event_links`, `integration_runs`, `usage_events`, `app_settings`.
+14. *(Stage 1)* `event_dedupe` instead of "already notified" columns on tasks and debriefs, so scheduled jobs never edit business rows or clutter their history.

@@ -68,17 +68,18 @@ differently, look for the closest match, or ask me.
    | `SUPABASE_ACCESS_TOKEN` | the token from A2 |
    | `DEV_SUPABASE_PROJECT_REF` | dev project ref |
    | `DEV_SUPABASE_DB_PASSWORD` | dev database password |
-   | `DEV_SUPABASE_URL` | dev project URL |
-   | `DEV_SUPABASE_PUBLISHABLE_KEY` | dev publishable key |
-   | `DEV_SUPABASE_SECRET_KEY` | dev secret key |
 
-   The `PROD_…` versions come in Stage 7.
+   These let the **"Database: apply migrations"** GitHub workflow update your dev project when you run
+   it (GitHub → **Actions** → **Database: apply migrations** → **Run workflow** → choose `dev`). The
+   `PROD_…` versions come in Stage 7. The automatic checks on every push don't need any secrets: they
+   use a temporary local Supabase.
 
-### A4. Let Claude's cloud sessions reach the dev project
+### A4. (Optional) Let Claude's cloud sessions reach the dev project
 
-This cloud environment currently blocks `supabase.co`. Without access, I can still build and test
-the database logic against a local Postgres, but I can't run the app against your dev project or run
-the end-to-end tests here.
+**Not needed for building.** Claude runs a complete local copy of Supabase (in Docker) inside its
+cloud session and in GitHub's automatic checks, so all tests run without your projects. Do this only
+if you want Claude to look at data in your *dev* project directly. This cloud environment currently
+blocks `supabase.co`.
 
 1. In the Claude app, open this session's **cloud environment menu** (in the session's title bar) →
    **Edit**.

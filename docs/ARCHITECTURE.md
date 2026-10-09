@@ -22,16 +22,18 @@ it in `PROGRESS.md`.
 | supabase (CLI, dev only) | 2.120.0 | Migrations, type generation |
 | zod | 4.6.5 | Validation shared by forms, server actions, API, and OpenAPI |
 | vitest, @playwright/test | 5.0.3, 1.64.0 | Unit/DB tests, end-to-end tests |
-| eslint, eslint-config-next, typescript-eslint | 10.12.0, 16.4.0, 8.71.1 | Linting (Next 16 removed `next lint`; we call ESLint directly) |
+| eslint, eslint-config-next | **9.39.5**, 16.4.0 | Linting (Next 16 removed `next lint`; we call ESLint directly). ⚠️ ESLint 10 is newer, but the React/a11y/import plugins inside eslint-config-next don't support it yet. |
+| prettier | 3.x (pinned) | Formatting, including the generated database types |
 
 Small libraries I plan to add, each for a reason the spec's stack doesn't cover:
 
 | Package | Stage | Reason |
 |---|---|---|
-| next-themes | 1 | Light/dark toggle without a flash of the wrong theme (the standard shadcn approach) |
-| date-fns + @date-fns/tz | 1 | Correct America/New_York conversion, including daylight-saving changes |
+| @date-fns/tz | 1 | Converting an ET wall-clock time to a moment, across daylight-saving changes. Formatting uses the built-in `Intl` API. |
 | server-only | 1 | Build error if a server-only module (secret keys) is ever imported into browser code |
+| radix-ui, class-variance-authority, clsx, tailwind-merge, tw-animate-css | 1 | What the shadcn components are built on |
 | sonner | 1 | Toast messages; this is shadcn's toast component |
+| pg (dev) | 1 | Database tests talk to Postgres directly to simulate each role |
 | react-hook-form + @hookform/resolvers | 2 | Inline errors as you type, using the same Zod schema the server uses |
 | @tanstack/react-table (v8) | 3 | Sorting and filtering logic for the tracker table (shadcn's data-table pattern) |
 | @dnd-kit/core | 3 | Kanban drag and drop that also works by keyboard (accessibility) |
@@ -39,6 +41,15 @@ Small libraries I plan to add, each for a reason the spec's stack doesn't cover:
 | @googleapis/sheets + @googleapis/calendar | 6 | Official Google clients; much smaller than the full `googleapis` package |
 
 Package manager: **pnpm** (fast, strict, supported by Vercel).
+
+Changes made while building Stage 1:
+
+- **No next-themes.** The Next 16 docs recommend a tiny inline script that applies the theme before
+  first paint (`src/components/theme/`).
+- **No date-fns.** `Intl.DateTimeFormat` with `timeZone: "America/New_York"` covers formatting.
+- **shadcn components were copied from the shadcn GitHub repo** (new-york-v4, Radix) because this
+  environment blocks `ui.shadcn.com`. `components.json` is in place, so the shadcn CLI works
+  wherever that site is reachable.
 
 ### Stack adjustments (pushback, as allowed in spec §4)
 
@@ -200,14 +211,15 @@ rendered. Realtime respects RLS, so it can't leak data.
 | Layer | Tool | What it covers | Where it runs |
 |---|---|---|---|
 | Unit | Vitest | Zod schemas, ET date helpers (including daylight-saving changes), facilitator rotation, OKR progress, workload flag, CSV, webhook signing | anywhere |
-| Database | Vitest + a throwaway local Postgres, with a minimal stand-in for Supabase's `auth` schema | every migration applies cleanly; RLS (signed out = nothing, inactive person = nothing, teammate = full edit); triggers; constraints | CI and cloud sessions (no Supabase access needed) |
-| End-to-end | Playwright, two projects: desktop Chrome and 390 × 844 mobile | the acceptance flows in spec §6; sign-in uses an admin-generated link, not real email | against the **dev** Supabase project |
+| Database | Vitest + `pg`, against the **local Supabase stack** (`pnpm db:start`, Docker). Each test runs in a rolled-back transaction and switches roles (signed out, teammate, inactive person, bot via the server key) | every migration applies cleanly; RLS and privileges; triggers; undo; scheduled checks; views | local, cloud sessions, CI |
+| End-to-end | Playwright, two projects: desktop Chrome and 390 × 844 mobile, against the local stack | the acceptance flows in spec §6; sign-in uses the real flow, reading the code from the local test mailbox (Mailpit) | local, cloud sessions, CI |
 
 Environments:
 
 | Where | Supabase project |
 |---|---|
-| Local / Claude sessions | `stratocrest-ops-dev` |
+| Local / Claude sessions / CI tests | the local Supabase stack in Docker (`pnpm db:start`); nothing leaves the machine |
+| Manual testing by the team before launch | `stratocrest-ops-dev` |
 | Vercel Preview deployments | `stratocrest-ops-dev` |
 | Vercel Production | `stratocrest-ops-prod` |
 
