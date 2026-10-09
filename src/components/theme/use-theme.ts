@@ -45,7 +45,11 @@ function subscribe(onChange: () => void) {
 
 /** Current theme preference plus the theme actually shown, and a setter. */
 export function useTheme() {
-  const preference = useSyncExternalStore<ThemePreference>(subscribe, readPreference, () => "system")
+  const preference = useSyncExternalStore<ThemePreference>(
+    subscribe,
+    readPreference,
+    () => "system",
+  )
   const resolved = useSyncExternalStore<"light" | "dark">(
     subscribe,
     () => (document.documentElement.classList.contains("dark") ? "dark" : "light"),
