@@ -1,0 +1,146 @@
+# Applies new database changes (the files in supabase/migrations/) to a real Supabase project.
+#
+# - Production: runs by itself when a change to supabase/migrations/ lands on main.
+# - Dev: run it by hand. GitHub → Actions → "Database: apply migrations" (left list) → Run workflow
+#   → under "Use workflow from" choose your branch, under "Which Supabase project" choose dev →
+#   Run workflow. (You can choose prod there too, but only from main.)
+#
+# It needs the repository secrets from docs/SETUP.md (A3 for dev, D2 for prod). Until they are
+# added, a run skips itself and says so on its Summary page, instead of failing.
+#
+# Only migrations the project doesn't have yet are applied, so running it twice is harmless.
+
+name: "Database: apply migrations"
+
+on:
+  push:
+    branches: [main]
+    paths: ["supabase/migrations/**"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Which Supabase project to update
+        type: choice
+        options: [dev, prod]
+        default: dev
+        required: true
+
+# Never two runs against the same project at once. A new run waits until the current one finishes;
+# a run that has started is never cancelled, because stopping a migration halfway is worse than
+# waiting. (If several runs are waiting, GitHub keeps only the newest, which applies them all.)
+concurrency:
+  group: db-migrate-${{ github.event_name == 'push' && 'prod' || inputs.environment }}
+  cancel-in-progress: false
+
+# Read-only: this workflow never changes the repository.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  migrate:
+    name: Apply migrations (${{ github.event_name == 'push' && 'prod' || inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A GitHub environment per project ("dev" or "production"); GitHub creates it on the first run.
+    # Approval rules can be added to production later under Settings → Environments, without
+    # changing this file.
+    environment: ${{ (github.event_name == 'push' || inputs.environment == 'prod') && 'production' || 'dev' }}
+    env:
+      # "prod" on pushes to main; otherwise the project chosen under Run workflow.
+      TARGET: ${{ github.event_name == 'push' && 'prod' || inputs.environment }}
+      # Which secrets to read: PROD_SUPABASE_… or DEV_SUPABASE_…
+      PREFIX: ${{ (github.event_name == 'push' || inputs.environment == 'prod') && 'PROD' || 'DEV' }}
+    steps:
+      - name: Only main can update production
+        if: ${{ env.TARGET == 'prod' && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Production is only updated from main. Run the workflow again with \"Use workflow from\" set to main."
+          exit 1
+
+      # The secrets are passed only to the steps that need them. secrets[...] reads the DEV_ or
+      # PROD_ one by name, and is empty when that secret hasn't been added.
+      - name: Check the secrets are set
+        id: secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets[format('{0}_SUPABASE_PROJECT_REF', env.PREFIX)] }}
+          SUPABASE_DB_PASSWORD: ${{ secrets[format('{0}_SUPABASE_DB_PASSWORD', env.PREFIX)] }}
+        run: |
+          missing=()
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || missing+=("SUPABASE_ACCESS_TOKEN")
+          [ -n "$PROJECT_REF" ] || missing+=("${PREFIX}_SUPABASE_PROJECT_REF")
+          [ -n "$SUPABASE_DB_PASSWORD" ] || missing+=("${PREFIX}_SUPABASE_DB_PASSWORD")
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            names=$(printf '%s, ' "${missing[@]}")
+            message="Skipped: no migrations were applied to ${TARGET}. Add the ${names%, } secret(s) under GitHub → Settings → Secrets and variables → Actions, as described in docs/SETUP.md (A3 for dev, D2 for prod), then run this workflow again."
+            # (No ":" or "," in the title: GitHub uses them to separate the parts of this line.)
+            echo "::notice title=No migrations applied to ${TARGET}::${message}"
+            echo "$message" >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A project ref is the 20 lowercase letters in the dashboard address
+          # (supabase.com/dashboard/project/<ref>), not the whole address.
+          if ! [[ "$PROJECT_REF" =~ ^[a-z]{20}$ ]]; then
+            echo "::error::The ${PREFIX}_SUPABASE_PROJECT_REF secret doesn't look like a project ref (the 20 lowercase letters after supabase.com/dashboard/project/). See docs/SETUP.md A1."
+            exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the code
+        if: ${{ steps.secrets.outputs.ready == 'true' }}
+        uses: actions/checkout@v4
+
+      # The Supabase CLI comes from package.json, so it is the same version used everywhere else.
+      - name: Set up pnpm
+        if: ${{ steps.secrets.outputs.ready == 'true' }}
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        if: ${{ steps.secrets.outputs.ready == 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (exactly as locked)
+        if: ${{ steps.secrets.outputs.ready == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      # Connects the CLI to the project. It reads SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD
+      # from the environment, so neither appears on the command line.
+      - name: Link the Supabase project
+        if: ${{ steps.secrets.outputs.ready == 'true' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets[format('{0}_SUPABASE_PROJECT_REF', env.PREFIX)] }}
+          SUPABASE_DB_PASSWORD: ${{ secrets[format('{0}_SUPABASE_DB_PASSWORD', env.PREFIX)] }}
+        run: pnpm exec supabase link --project-ref "$PROJECT_REF"
+
+      # Applies, in order, every migration the project doesn't have yet. --yes answers the
+      # "Do you want to push these migrations?" question. If a new migration is dated earlier than
+      # one the project already has, it stops without changing anything (the log says what to do).
+      # --skip-vault: this workflow only applies migrations; it never touches Vault secrets (such
+      # as the cron secret), which are set by hand in each project.
+      - name: Apply new migrations
+        if: ${{ steps.secrets.outputs.ready == 'true' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets[format('{0}_SUPABASE_DB_PASSWORD', env.PREFIX)] }}
+        run: pnpm exec supabase db push --linked --skip-vault --yes
+
+      # For the log: every migration, and which ones the project has applied ("Remote" column).
+      - name: Show migration history
+        if: ${{ steps.secrets.outputs.ready == 'true' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets[format('{0}_SUPABASE_DB_PASSWORD', env.PREFIX)] }}
+        run: |
+          pnpm exec supabase migration list --linked
+          echo "Migrations are up to date on ${TARGET}." >> "$GITHUB_STEP_SUMMARY"
