@@ -61,7 +61,6 @@ export function SignInForm({ next, reason }: { next: string; reason?: SignInReas
       pending={requestPending}
       next={next}
       reason={request === initialRequestCodeState ? reason : undefined}
-      returning={dismissed !== null}
     />
   )
 }
@@ -72,14 +71,12 @@ function EmailStep({
   pending,
   next,
   reason,
-  returning,
 }: {
   request: RequestCodeState
   action: RequestAction
   pending: boolean
   next: string
   reason?: SignInReason
-  returning: boolean
 }) {
   const error = request.step === "email" ? request.error : undefined
   const inputRef = useRef<HTMLInputElement>(null)
@@ -119,7 +116,7 @@ function EmailStep({
               spellCheck={false}
               required
               defaultValue={request.email}
-              autoFocus={returning}
+              autoFocus
               aria-invalid={error ? true : undefined}
               aria-describedby="sign-in-email-message"
             />
