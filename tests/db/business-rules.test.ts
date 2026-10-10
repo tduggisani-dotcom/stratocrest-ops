@@ -347,8 +347,9 @@ describe("key results", () => {
   test("an objective has at most 4 active key results", async () => {
     await withTx(async (db) => {
       const me = await createTeammate(db)
-      await actAs(db, me.authUserId)
+      // Quarters are reference data (read-only for teammates): set up before switching role.
       const quarter = await quarterId(db)
+      await actAs(db, me.authUserId)
       const objective = await createObjective(db, me.id, quarter)
       const keyResult = (objectiveId: string, n: number) =>
         insert(db, "key_results", {
