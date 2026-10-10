@@ -118,6 +118,16 @@ begin
     perform app.ensure_org_meeting_debrief(new.id);
   end if;
 
+  -- Moved to an org of the other kind: the debrief follows (investor ↔ customer).
+  if tg_op = 'UPDATE' and new.organization_id is distinct from old.organization_id then
+    update public.debriefs d
+       set kind = o.kind::text::public.debrief_kind
+      from public.organizations o
+     where d.org_meeting_id = new.id
+       and o.id = new.organization_id
+       and d.kind::text <> o.kind::text;
+  end if;
+
   if tg_op = 'INSERT' then
     perform app.enqueue_webhook('org_meeting.logged', (
       select jsonb_build_object(

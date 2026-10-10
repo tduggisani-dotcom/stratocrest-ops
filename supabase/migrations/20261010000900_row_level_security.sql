@@ -141,7 +141,8 @@ grant execute on function
   app.is_service_role(),
   app.enqueue_webhook(text, jsonb),
   app.org_event_payload(public.organizations),
-  app.ensure_org_meeting_debrief(uuid)
+  app.ensure_org_meeting_debrief(uuid),
+  app.delete_created_record(regclass, uuid)
 to authenticated, service_role;
 
 -- Undo is available to teammates (it runs with their own rights, under RLS).

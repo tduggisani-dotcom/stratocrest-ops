@@ -9,7 +9,7 @@ create table public.checklist_templates (
   updated_at  timestamptz not null default now(),
   created_by  uuid references public.actors (id),
   updated_by  uuid references public.actors (id),
-  name        text not null check (btrim(name) <> '' and char_length(name) <= 120),
+  name        text not null check (name ~ '[^[:space:]]' and char_length(name) <= 120),
   description text check (char_length(description) <= 2000),
   items       jsonb not null default '[]'::jsonb check (jsonb_typeof(items) = 'array' and jsonb_array_length(items) <= 100),
   archived_at timestamptz
@@ -24,7 +24,7 @@ create table public.checklists (
   created_by         uuid references public.actors (id),
   updated_by         uuid references public.actors (id),
   template_id        uuid references public.checklist_templates (id) on delete set null,
-  title              text not null check (btrim(title) <> '' and char_length(title) <= 200),
+  title              text not null check (title ~ '[^[:space:]]' and char_length(title) <= 200),
   synthe6_session_id uuid references public.synthe6_sessions (id) on delete cascade,
   organization_id    uuid references public.organizations (id) on delete cascade,
   org_meeting_id     uuid references public.org_meetings (id) on delete cascade,
@@ -47,7 +47,7 @@ create table public.checklist_items (
   updated_by   uuid references public.actors (id),
   checklist_id uuid not null references public.checklists (id) on delete cascade,
   position     smallint not null default 0,
-  text         text not null check (btrim(text) <> '' and char_length(text) <= 500),
+  text         text not null check (text ~ '[^[:space:]]' and char_length(text) <= 500),
   hint         text check (char_length(hint) <= 1000),
   done_at      timestamptz,
   done_by      uuid references public.actors (id)
@@ -85,9 +85,9 @@ create table public.candidates (
   updated_at       timestamptz not null default now(),
   created_by       uuid references public.actors (id),
   updated_by       uuid references public.actors (id),
-  name             text not null check (btrim(name) <> '' and char_length(name) <= 120),
+  name             text not null check (name ~ '[^[:space:]]' and char_length(name) <= 120),
   email            extensions.citext check (email is null or (email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' and char_length(email) <= 254)),
-  role_sought      text not null check (btrim(role_sought) <> '' and char_length(role_sought) <= 120),
+  role_sought      text not null check (role_sought ~ '[^[:space:]]' and char_length(role_sought) <= 120),
   source           text check (char_length(source) <= 200),
   stage            public.candidate_stage not null default 'sourced',
   owner_id         uuid not null references public.people (id),
@@ -109,7 +109,7 @@ create table public.help_requests (
                     'organizations', 'org_meetings', 'hypotheses', 'tasks', 'objectives', 'key_results',
                     'synthe6_sessions', 'team_meetings', 'decisions', 'debriefs', 'checklists', 'candidates')),
   entity_id       uuid,
-  message         text not null check (btrim(message) <> '' and char_length(message) <= 2000),
+  message         text not null check (message ~ '[^[:space:]]' and char_length(message) <= 2000),
   resolved_by     uuid references public.people (id),
   resolved_at     timestamptz,
   resolution_note text check (char_length(resolution_note) <= 2000),
@@ -124,7 +124,7 @@ create table public.feedback (
   created_at timestamptz not null default now(),
   person_id  uuid not null references public.people (id),
   page_path  text not null check (page_path ~ '^/' and char_length(page_path) <= 500),
-  message    text not null check (btrim(message) <> '' and char_length(message) <= 5000),
+  message    text not null check (message ~ '[^[:space:]]' and char_length(message) <= 5000),
   status     text not null default 'new' check (status in ('new', 'seen', 'done'))
 );
 create index feedback_created_idx on public.feedback (created_at desc);

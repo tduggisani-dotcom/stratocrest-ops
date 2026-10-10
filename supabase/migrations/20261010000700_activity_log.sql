@@ -119,6 +119,38 @@ end;
 $$;
 
 -- -----------------------------------------------------------------------------
+-- Removing a record that an undone change created, on tables that have no
+-- archive and that teammates can't delete directly (e.g. a meeting the bot
+-- logged). Reachable only through public.undo_activity(), which has already
+-- checked the log entry; the app schema is not exposed by the Data API.
+-- People are never deleted this way (deactivate them instead).
+-- -----------------------------------------------------------------------------
+create function app.delete_created_record(p_table regclass, p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not (app.is_team_member() or app.is_service_role()) then
+    raise exception 'Only team members can undo changes.' using errcode = 'insufficient_privilege';
+  end if;
+  if p_table not in (
+    'public.availability_blocks'::regclass, 'public.crunch_periods'::regclass,
+    'public.synthe6_sessions'::regclass, 'public.org_meetings'::regclass,
+    'public.org_meeting_attendees'::regclass, 'public.hypothesis_tests'::regclass,
+    'public.team_meetings'::regclass, 'public.meeting_updates'::regclass,
+    'public.debriefs'::regclass, 'public.action_items'::regclass,
+    'public.checklists'::regclass, 'public.checklist_items'::regclass,
+    'public.help_requests'::regclass
+  ) then
+    raise exception 'Records in % cannot be removed by undo.', p_table using errcode = 'feature_not_supported';
+  end if;
+  execute format('delete from %s where id = $1', p_table) using p_id;
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
 -- Undo one activity-log entry (spec §6.11 "can be undone by a person").
 --   created a record  → archive it (or delete it, for tables without archive)
 --   modified a record → put the changed fields back
@@ -173,7 +205,7 @@ begin
     if v_current ? 'archived_at' then
       execute format('update %s set archived_at = now() where id = $1', v_table) using e.entity_id;
     else
-      execute format('delete from %s where id = $1', v_table) using e.entity_id;
+      perform app.delete_created_record(v_table, e.entity_id);
     end if;
 
   elsif e.after is not null then
@@ -195,6 +227,7 @@ begin
       join pg_attribute a on a.attrelid = v_table and a.attname = f and a.attnum > 0
                           and not a.attisdropped and a.attgenerated = '';
     if v_set is null then
+      perform set_config('app.undo_of', '', true);
       return;
     end if;
     execute format(
@@ -217,6 +250,9 @@ begin
       v_table, v_cols
     ) using e.before;
   end if;
+
+  -- Later writes in the same transaction are not part of this undo.
+  perform set_config('app.undo_of', '', true);
 end;
 $$;
 comment on function public.undo_activity is 'Reverse one activity_log entry. Logged as action = undo with undo_of set.';

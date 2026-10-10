@@ -62,7 +62,7 @@ $$;
 create table public.actors (
   id           uuid primary key default gen_random_uuid(),
   kind         public.actor_kind not null,
-  display_name text not null check (btrim(display_name) <> '' and char_length(display_name) <= 120),
+  display_name text not null check (display_name ~ '[^[:space:]]' and char_length(display_name) <= 120),
   is_active    boolean not null default true,
   created_at   timestamptz not null default now()
 );
@@ -75,8 +75,8 @@ create table public.people (
   created_by         uuid references public.actors (id),
   updated_by         uuid references public.actors (id),
   auth_user_id       uuid unique references auth.users (id) on delete set null,
-  name               text not null check (btrim(name) <> '' and char_length(name) <= 120),
-  role               text not null check (btrim(role) <> '' and char_length(role) <= 120),
+  name               text not null check (name ~ '[^[:space:]]' and char_length(name) <= 120),
+  role               text not null check (role ~ '[^[:space:]]' and char_length(role) <= 120),
   email              extensions.citext not null unique check (email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' and char_length(email) <= 254),
   avatar_url         text check (avatar_url is null or (avatar_url ~ '^https://' and char_length(avatar_url) <= 2048)),
   contact_preference text check (char_length(contact_preference) <= 500),
@@ -237,8 +237,11 @@ declare
   v_actor uuid := app.current_actor_id();
 begin
   if tg_op = 'INSERT' then
-    new.created_at := now();
-    new.created_by := v_actor;
+    -- An undo that re-inserts a removed row keeps who created it originally.
+    if coalesce(current_setting('app.undo_of', true), '') = '' or new.created_at is null then
+      new.created_at := now();
+      new.created_by := v_actor;
+    end if;
   else
     new.created_at := old.created_at;
     new.created_by := old.created_by;
@@ -279,7 +282,7 @@ create table public.crunch_periods (
   person_id  uuid not null references public.people (id) on delete cascade,
   start_date date not null,
   end_date   date not null,
-  label      text not null check (btrim(label) <> '' and char_length(label) <= 120),
+  label      text not null check (label ~ '[^[:space:]]' and char_length(label) <= 120),
   check (end_date >= start_date)
 );
 create index crunch_periods_person_idx on public.crunch_periods (person_id, start_date);

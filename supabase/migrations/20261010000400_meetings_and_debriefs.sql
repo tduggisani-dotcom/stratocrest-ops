@@ -65,7 +65,7 @@ create table public.decisions (
   updated_by        uuid references public.actors (id),
   team_meeting_id   uuid references public.team_meetings (id) on delete set null,
   meeting_update_id uuid references public.meeting_updates (id) on delete set null,
-  statement         text not null check (btrim(statement) <> '' and char_length(statement) <= 2000),
+  statement         text not null check (statement ~ '[^[:space:]]' and char_length(statement) <= 2000),
   rationale         text check (char_length(rationale) <= 10000),
   decision_date     date not null,
   owner_id          uuid references public.people (id),
