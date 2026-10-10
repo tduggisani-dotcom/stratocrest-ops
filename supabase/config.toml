@@ -156,12 +156,19 @@ max_indexes = 5
 [auth]
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
-# in emails.
-site_url = "http://127.0.0.1:3000"
+# in emails. Keep it equal to NEXT_PUBLIC_SITE_URL in .env.local.
+site_url = "http://localhost:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# Sign-in emails link to <site>/auth/confirm?next=…, so each site needs a "/**" entry. Port 3100 is
+# for a second dev server (e.g. Playwright).
+additional_redirect_urls = [
+  "http://localhost:3000/**",
+  "http://127.0.0.1:3000/**",
+  "http://localhost:3100/**",
+  "http://127.0.0.1:3100/**",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -174,7 +181,8 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = true
+# Off: only teammates whose login was created by `pnpm seed` (or the app) can sign in.
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
@@ -219,6 +227,9 @@ web3 = 30
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
+# Careful: despite the name, the CLI maps this to GOTRUE_EXTERNAL_EMAIL_ENABLED, the switch for the
+# whole email provider. `false` would turn off email sign-in for everyone. Sign-ups are blocked by
+# `[auth] enable_signup = false` above instead.
 enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
@@ -231,7 +242,7 @@ secure_password_change = false
 max_frequency = "1s"
 # Number of characters used in the email OTP.
 otp_length = 6
-# Number of seconds before the email OTP expires (defaults to 1 hour).
+# Number of seconds before the email OTP expires (defaults to 1 hour). The email says "1 hour".
 otp_expiry = 3600
 
 # Use a production-ready SMTP server
@@ -243,6 +254,12 @@ otp_expiry = 3600
 # pass = "env(SENDGRID_API_KEY)"
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
+
+# Sign-in email: a 6-digit code plus a link to /auth/confirm (see the comment in the template).
+# content_path is relative to the repo root.
+[auth.email.template.magic_link]
+subject = "Your StratoCrest Ops sign-in code"
+content_path = "./supabase/templates/magic_link.html"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
