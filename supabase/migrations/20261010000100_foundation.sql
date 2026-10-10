@@ -127,9 +127,11 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- Compare lowercased text: with search_path = '' the citext "=" operator
+  -- (in schema extensions) isn't found, and a plain text compare is case-sensitive.
   update public.people
      set auth_user_id = new.id
-   where email = new.email::extensions.citext
+   where lower(email::text) = lower(new.email)
      and auth_user_id is null;
   return new;
 end;
