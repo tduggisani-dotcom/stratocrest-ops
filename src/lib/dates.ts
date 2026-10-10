@@ -8,6 +8,9 @@ import { TZDate } from "@date-fns/tz"
  *   and is stored in a Postgres `date` column. Do day arithmetic with the
  *   helpers here, never with `new Date()` math.
  * - A moment (meeting start) is a `Date` / ISO timestamp, stored as timestamptz.
+ *
+ * The seed scripts import this file under plain Node (type stripping): keep it free of
+ * "@/..." imports and of non-erasable TypeScript (enums, namespaces, parameter properties).
  */
 export const APP_TIME_ZONE = "America/New_York"
 
