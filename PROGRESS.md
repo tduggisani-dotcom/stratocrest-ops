@@ -1,149 +1,137 @@
 # PROGRESS — StratoCrest Ops
 
-_Last updated: 2026-10-09 (Stage 0)_
+_Last updated: 2026-10-10 (Stage 1)_
 
 ## Stages
 
 | Stage | Status |
 |---|---|
-| 0 — Plan | ✅ Done. Waiting on answers to the open questions and "go". |
-| 1 — Foundation | ⏭ Next (file outline below) |
-| 2 — This Week + Tasks + People basics | — |
+| 0 — Plan | ✅ Done. Defaults accepted ("looks good continue", 2026-10-09). |
+| 1 — Foundation | ✅ Done. Waiting for your "go" for Stage 2. |
+| 2 — This Week + Tasks + People basics | ⏭ Next (file outline below) |
 | 3 — Investor Tracker → Customer Pipeline + hypothesis roll-up | — |
 | 4 — Meetings, Debriefs, Synthe6 timeline | — |
 | 5 — OKRs, Checklists, Workload, Wins, Recruiting, Help | — |
 | 6 — Bot integration | — |
 | 7 — Polish and launch | — |
 
-## Open questions (waiting on the team)
+## What Stage 1 built
 
-Each one has a default. Replying "go" means "use the defaults".
+- **Database:** 11 migrations implementing `docs/DATA_MODEL.md`. Covers:
+  - every table, with Row Level Security and privileges reset to nothing, then granted exactly;
+  - common-columns and audit triggers, plus `undo_activity()`;
+  - business rules (last contact date, automatic debriefs, events, immutable org kind);
+  - the scheduled checks on `pg_cron` every 15 minutes (next Sunday meeting with a rotating
+    facilitator, held meetings, due debriefs, de-duplicated events);
+  - three views (`org_overview`, `person_workload`, `wins_feed`);
+  - Realtime publication.
+- **Sign-in:**
+  - Email, then a 6-digit code, or the emailed link. The link page signs in only when the button is
+    pressed, so email scanners can't use it up.
+  - Only active teammates: the `people` table is the allowlist, and Supabase sign-ups are off.
+  - A deactivated teammate is locked out on their next page load and told why.
+- **App shell:**
+  - Desktop sidebar; on phones, a top bar plus a bottom nav (This Week, Investors, Customers, Tasks,
+    More).
+  - Skip link; user menu with Light / Dark / System theme and sign-out.
+  - A placeholder page for every section, each with an explanatory empty state.
+- **Seeds:**
+  - `pnpm seed` (safe to re-run, safe for production): the six people with confirmed logins, all 53
+    Synthe6 rows, quarters, and the four starter checklist templates.
+  - `pnpm seed:demo`: dev-only `[DEMO]` data.
+- **Tests:**
+  - 273 unit tests.
+  - 115 database tests: privileges, RLS, attribution, audit, undo, rules, scheduled checks, views.
+  - 57 Playwright tests at desktop and 390 px, using the real sign-in flow.
+- **CI:** `.github/workflows/ci.yml` runs checks, database and e2e jobs against a temporary local
+  Supabase on every push. `db-migrate.yml` applies migrations: dev when started by hand, production
+  on merge to `main`.
 
-1. **Sign-in allowlist location (auth; needs your OK).**
-   - Spec: the allowlist lives in env/config.
-   - Proposal: `TEAM_EMAILS` seeds the six people once. After that, the **people table is the
-     allowlist**, so a new teammate (Recruiting → Joined) can be invited from the app without a
-     redeploy, and deactivating someone locks them out immediately. Public sign-ups stay off in
-     Supabase.
-   - *Default: the proposal.*
-2. **Sign-in email.** Magic links need an email provider (see `docs/SETUP.md` Part B). Do you own a
-   domain, and can someone edit its DNS?
-   - *Default: Resend on a sub-domain such as `mail.<your-domain>`.*
-3. **Hosting plan and preview links.**
-   - Vercel's free Hobby plan is limited by Vercel's terms to non-commercial personal use. An internal
-     company tool likely counts as commercial.
-   - Options: **Vercel Pro**, $20/month for one seat (teammates don't need Vercel accounts), or Hobby
-     at your own risk.
-   - Also: do you want a **preview link from Stage 1 on**, so the team can try each stage on their
-     phones? That means setting up Vercel in Stage 1 instead of Stage 7.
-   - *Default: build as planned. You choose the plan before Stage 7, and there are no preview links
-     until then.*
-4. **How does the Grok bot run?**
-   - Is it code you control that calls xAI's API with tool calling, a no-code tool (n8n, Zapier,
-     Make…), or the Grok app itself?
-   - Can it send HTTP requests with an `Authorization` header?
-   - Does it have a public URL that can receive webhooks?
-   - Who maintains it?
-   - This decides the shape of Stage 6. *Default: code you control, which can call our API and
-     receive webhooks.*
-5. **Google.**
-   - Which Google account does the bot use: Google Workspace (company domain) or personal Gmail?
-   - Is it OK to create a **new** mirror Sheet and a **new** "StratoCrest Ops" calendar, rather than
-     writing into the bot's existing ones?
-   - *Default: new ones, shared with the bot's account.*
-6. **Synthe6 session times.** What time do Wednesday sessions and mentor coaching usually start and
-   end (ET)? This affects the countdown and the Calendar events.
-   - *Default: shown as all-day until set; times are editable per session.*
-7. **Small defaults I picked. Say if any are wrong:**
-   - **Facilitator rotation:** follows the spec's team order (John → Taeyoon → Brad → Sam → Ian →
-     Tanush), starting with John at the first meeting the app creates. It can be changed per meeting.
-   - **A company that's both an investor and a customer** gets two linked records, one per pipeline.
-   - **Investor subtypes** stay as in the spec. A corporate or strategic investor goes under "Other"
-     unless you want its own subtype.
-   - **Archive, not delete:** main records are archived (restorable) instead of deleted.
-   - **Automatic debriefs** are only created for events from go-live onward, so there's no backlog on
-     day one.
-   - **Overload flag:** a person is flagged on the workload grid when their open-item total is
-     ≥ 1.5× the team average **and** at least 3 above it.
+## Still needed from you (none of it blocks Stage 2)
+
+1. **Supabase accounts:** `docs/SETUP.md` Part A, steps A1–A3 and A5. A4 is now optional.
+2. **Sign-in email domain:** Part B. Until then, only the person who created the Supabase organization
+   can receive sign-in emails from a hosted project.
+3. **How the Grok bot runs** (open question 4 from Stage 0). This decides Stage 6.
+4. **Google account and the new Sheet/Calendar:** open question 5, needed by Stage 6.
+5. **Synthe6 session times:** sessions show as all-day until then.
+6. **Hosting plan:** Vercel Hobby vs Pro, needed by Stage 7.
 
 ## Decisions made
 
 | Date | Decision | Why |
 |---|---|---|
-| 2026-10-09 | Data model refined as listed in `docs/DATA_MODEL.md` §8. **Approval = your "go".** | Real foreign keys, one rule set for UI and bot, concurrency-safe checklists, searchable decisions |
-| 2026-10-09 | TypeScript **6.0.3**, not 7.0.2 | typescript-eslint 8.71 supports TS < 6.1 only |
-| 2026-10-09 | Scheduled jobs on Supabase **pg_cron / pg_net**, not Vercel Cron | Vercel Hobby cron runs at most once a day |
-| 2026-10-09 | `date` for calendar days and `timestamptz` for moments; ET everywhere in the UI | Avoids off-by-one-day bugs from storing days as UTC midnight |
-| 2026-10-09 | Stored values in `snake_case`, labels in `src/lib/labels.ts` | Stable bot API; labels can change freely |
-| 2026-10-09 | Magic link **plus a 6-digit code**; `/auth/confirm` needs a button press | Phones open links in another browser; email scanners use up links |
-| 2026-10-09 | Two Supabase projects (dev, prod) in `us-east-1`; Vercel `iad1` | Keep test data away from real data; low latency from Ohio |
-| 2026-10-09 | Database migrations applied by **GitHub Actions**: dev on branch pushes, prod on `main` | This cloud environment can't open Postgres connections; it's also simpler for a non-specialist |
-| 2026-10-09 | pnpm; extra libraries as listed in `docs/ARCHITECTURE.md` §1 (each with a reason) | Spec §4: state why before adding |
-| 2026-10-09 | DB tests run on a throwaway local Postgres with a minimal `auth` stand-in | Lets RLS and triggers be tested in CI and cloud sessions without Supabase access |
+| 2026-10-09 | Stage 0 defaults accepted, including: the people table is the sign-in allowlist; Resend for email; facilitator rotation in team order starting with John; one linked record per kind when a company is both; archive, not delete | "looks good continue" |
+| 2026-10-09 | Data model as in `docs/DATA_MODEL.md` §8, plus `event_dedupe` instead of "notified" columns | Scheduled jobs never edit business rows |
+| 2026-10-09 | TypeScript 6.0.3 (not 7); **ESLint 9.39.5** (not 10) | typescript-eslint and eslint-config-next's plugins don't support the newer majors yet |
+| 2026-10-09 | Keep Next 16.4's defaults: `cacheComponents`, `partialPrefetching`, plus `typedRoutes` | Instant static shell on phones; per-user data streams in behind `<Suspense>` |
+| 2026-10-09 | No next-themes and no date-fns. Theme uses an inline script (Next's recommended pattern); dates use `Intl` + `@date-fns/tz` | Fewer libraries |
+| 2026-10-09 | shadcn new-york-v4 (Radix) components copied from the shadcn GitHub repo | `ui.shadcn.com` is blocked here |
+| 2026-10-09 | Prettier for formatting (no semicolons, printWidth 100); `*.md` excluded | Consistent style, including generated types |
+| 2026-10-09 | Design tokens: one indigo accent; red/amber/green only for status. All 24 text/background pairs are ≥ 4.5:1 | WCAG AA in both themes |
+| 2026-10-09 | Buttons and inputs are 44 px tall below `md` | Spec: tap targets ≥ 44 px on phones |
+| 2026-10-09 | Tests and CI run against a **local Supabase stack in Docker**, not the dev project | No secrets needed; nothing leaves the machine |
+| 2026-10-09 | `pg` is a dev dependency, for DB tests that switch roles | Tests simulate each role exactly |
+| 2026-10-09 | Supabase sign-ups are off via `[auth] enable_signup = false`, **not** `[auth.email] enable_signup` | The latter disables email sign-in entirely |
+| 2026-10-09 | Sign-in tells you when an email isn't on the team list | Helpful for a 6-person team; enumeration risk accepted |
+| 2026-10-09 | Sign-out ends only this device's session. The not-on-team path signs out everywhere | Signing out on a laptop shouldn't sign you out on your phone |
+| 2026-10-09 | Email links use `NEXT_PUBLIC_SITE_URL`, falling back to the request origin | Correct links per environment |
+| 2026-10-09 | This Week order: My work and Needs attention first, then Synthe6, Sunday meeting, OKRs | Principle 1, people first |
+| 2026-10-09 | Active nav highlighting renders inside Suspense | `usePathname()` suspends on dynamic routes under Cache Components |
+| 2026-10-09 | Brand mark is the lucide `MountainSnow` icon on the accent colour; also used as `src/app/icon.svg` | Simple, no image files |
+| 2026-10-09 | W40 is tagged mentor coaching, so Demo Day prep is W38, W39, W41–W43 | W40's type is Lead Mentor Coaching |
+| 2026-10-09 | Checklist template items carry a phase prefix ("Before:", "After:"…) | Simple, editable as text |
+| 2026-10-09 | Changing an email in `TEAM_EMAILS` links a new login; the old login is left unlinked (it can't get in) | Safe, no destructive cleanup |
+| 2026-10-10 | Undo of a newly created record on tables without archive (e.g. a meeting the bot logged) deletes it through a narrow security-definer helper. People are never deleted by undo | Spec: "bot changes … can be undone by a person" |
+| 2026-10-10 | `createClient()` awaits `connection()` | Stops ~700 prefetch errors per browse (supabase-js reads `Date.now()`) |
+| 2026-10-10 | Stage 1 migrations were corrected in place, before any hosted project existed. From now on, only new migrations | Clean schema history before first deploy |
+| 2026-10-10 | Migrations go to dev **by hand** (GitHub → Actions → Run workflow) and to production on merge to `main`; `db push --skip-vault` | Production changes only from reviewed code |
 
-## Known issues and risks
+## Known issues
 
-- **This cloud environment blocks `supabase.co`** (proxy returns 403), so I can't run the app or
-  end-to-end tests against the dev project from here. Fix: `docs/SETUP.md` A4. Database tests still
-  run locally.
-- **No Docker daemon here**, so there is no local Supabase stack. Postgres 16 is installed for DB
-  tests. Supabase runs Postgres 17, so avoid features that only exist in 17.
-- **Vercel Hobby terms** (open question 3).
-- **Supabase free plan:** pauses after 7 idle days (daily use and the 15-minute sync keep it awake),
-  and has no automatic backups. Decide on a weekly backup in Stage 7.
-- **next 16.4.0 is days old.** If it misbehaves, pin 16.3.8 and note it here.
+- **ESLint 9.39.5 is marked deprecated upstream.** Move to ESLint 10 when eslint-config-next's
+  plugins support it.
+- **Hosted Supabase allows one email per address per 60 s** (local: 1 s). Pressing "Resend code"
+  quickly shows the wait message. That's correct behavior.
+- **Account-menu focus ring:** after picking a theme with the mouse, the account button shows a focus
+  ring. This is Radix returning focus for keyboard users; it's cosmetic.
+- **Local e2e runs send ~14 sign-in emails.** Running the suite 3+ times within 5 minutes hits the
+  local email limit.
+- **Supabase free plan** pauses after 7 idle days and has no automatic backups. Decide on a weekly
+  backup in Stage 7.
+- **Vercel Hobby terms:** see "Still needed from you" item 6.
 
 ## Next steps
 
 **You:**
 
-1. Answer the open questions above (or reply "go" to accept the defaults).
-2. Do `docs/SETUP.md` **Part A** (Supabase, access token, GitHub secrets, cloud environment access,
-   `TEAM_EMAILS`).
-3. Start Part B (email domain) if you can.
+1. Try the review notes in the Stage 1 summary.
+2. Do `docs/SETUP.md` Part A when you can.
+3. Reply "go" for Stage 2.
 
-**Stage 1 plan (files to create):**
+**Stage 2 plan (This Week + Tasks + People basics), files to create or change:**
 
-- **Tooling:**
-  - `package.json`, `pnpm-lock.yaml`, `tsconfig.json` (strict), `next.config.ts`,
-    `eslint.config.mjs`, `postcss.config.mjs`, `components.json`
-  - `vitest.config.ts`, `playwright.config.ts`
-  - `.gitignore`, `.env.example`
-  - `.github/workflows/ci.yml` (typecheck, lint, unit, DB tests) and `.github/workflows/db-migrate.yml`
-- **Database:**
-  - `supabase/config.toml`
-  - `supabase/migrations/`:
-    1. extensions + `app` helper functions (today_et, actor resolution, is_team_member)
-    2. enums + reference data (`org_stages`)
-    3. people, actors, availability, crunch periods
-    4. orgs, meetings, hypotheses
-    5. tasks + OKRs
-    6. program, Sunday meetings, decisions, action items, debriefs
-    7. checklists, candidates, help, feedback, usage events, app_settings
-    8. activity_log + common/audit triggers
-    9. RLS policies
-    10. views
-    11. pg_cron `run_scheduled_checks`
-  - Stage 6 tables come in a later migration.
-- **Auth:**
-  - `src/proxy.ts`
-  - `src/lib/supabase/{server,browser,admin}.ts`, `src/lib/auth.ts`
-  - `src/app/(auth)/sign-in/`, `src/app/auth/confirm/`
-- **Shell:**
-  - `src/app/layout.tsx`, `globals.css` (tokens, light/dark)
-  - `src/app/(app)/layout.tsx`
-  - `src/components/shell/` (sidebar, bottom nav, theme toggle)
-  - `src/components/common/{PersonChip,EmptyState}.tsx`
-  - A placeholder page with an empty state for each section
-- **Libraries:**
-  - `src/lib/dates.ts`, `src/lib/labels.ts`
-  - `src/lib/schemas/` (people, enums)
-  - `src/types/database.ts`
-- **Seeds:**
-  - `scripts/seed.ts` with data files for the Synthe6 schedule (53 rows), quarters, and four starter
-    checklist templates
-  - `scripts/seed-demo.ts` (guarded, dev only)
-- **Tests:**
-  - Unit: dates (DST), labels, `TEAM_EMAILS` parsing, seed data matches spec §11
-  - DB: migrations apply; RLS; actor and audit triggers; required-field constraints
-  - E2E: sign-in page and app shell at desktop and 390 px
+- **Schemas:** `src/lib/schemas/{tasks,people,availability}.ts` (+ tests). Owner, due date and next
+  action are required, with inline messages.
+- **Tasks:**
+  - `src/features/tasks/` (queries, actions, components).
+  - Create/edit form with owner picker, ET due date, and next action. Optional links to a key result,
+    session, org, or meeting.
+  - A crunch-period warning that warns but doesn't block.
+  - Views: My tasks, by owner, by status, due this week. Inline status change.
+- **Tasks route:** `src/app/(app)/tasks/` (list + `[id]`), replacing the placeholder.
+- **People:**
+  - `src/features/people/` and `src/app/(app)/people/` (list + `[id]` profile).
+  - Profile shows role, avatar, ownership, CliftonStrengths, skills, contact preference, availability
+    blocks, and crunch periods. Each can be edited; profile-field edits go through RLS. Email, active
+    flag and rotation order change through a server action using the admin client.
+- **This Week:** `src/features/this-week/` and `src/app/(app)/page.tsx`.
+  - My work (my open tasks, follow-ups, debriefs due) and Needs attention (overdue tasks and
+    follow-ups, 14-day stale orgs, debriefs due, open help requests).
+  - Next Synthe6 session with countdown; next Sunday meeting with facilitator and who has posted
+    updates; org meetings in the next 7 days; OKR progress (empty state until Stage 5).
+- **Live updates:** `src/components/common/live-refresh.tsx`, which subscribes to Supabase Realtime
+  and refreshes the page (debounced).
+- **Tests:** unit (schemas, crunch overlap, This Week grouping), DB (anything new), and e2e
+  (create a task, inline status change, profile edit, This Week sections, live update across two
+  browsers, 390 px).

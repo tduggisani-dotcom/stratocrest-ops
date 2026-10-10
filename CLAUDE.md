@@ -35,23 +35,37 @@ Versions are pinned exactly. Don't add a library without writing why in `PROGRES
 
 ## Commands
 
-These are planned and get created in Stage 1. Keep this list true.
-
 | Command | Does |
 |---|---|
-| `pnpm dev` | dev server on http://localhost:3000 |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm lint` | ESLint (Next 16 has no `next lint`) |
+| `pnpm db:start` / `pnpm db:stop` | local Supabase stack in Docker (API :54321, DB :54322, Mailpit :54324). Applies migrations on first start. |
+| `pnpm db:reset` | rebuild the local database from `supabase/migrations/` (then run `pnpm seed`) |
+| `pnpm seed` / `pnpm seed:demo` | production-safe seed (reads `TEAM_EMAILS`) / dev-only `[DEMO]` data |
+| `pnpm dev` | dev server on http://localhost:3000 (needs the local stack and `.env.local`) |
+| `pnpm typecheck` | `next typegen` + `tsc --noEmit` |
+| `pnpm lint` / `pnpm format:check` | ESLint (zero warnings) / Prettier |
 | `pnpm test` | Vitest unit tests |
-| `pnpm test:db` | migrations + RLS + trigger tests on a throwaway local Postgres |
-| `pnpm test:e2e` | Playwright, desktop + 390 px mobile, against the dev Supabase project |
-| `pnpm db:types` | regenerate `src/types/database.ts` after a migration |
-| `pnpm seed` / `pnpm seed:demo` | production-safe seed / dev-only `[DEMO]` data |
+| `pnpm test:db` | database tests against the local stack (each test rolls back) |
+| `pnpm test:e2e` | Playwright, desktop + 390 px, against the local stack (builds the app on :3100) |
+| `pnpm check` | typecheck + lint + format:check + unit tests |
+| `pnpm db:types` | regenerate `src/types/database.ts` after a migration (CI fails if it's stale) |
+
+**Cloud sessions (Claude Code on the web):**
+
+- Start Docker first: `sudo dockerd` (as a background command).
+- Pull Supabase images from Docker Hub, because the AWS registry (ECR) is blocked: prefix
+  `SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io` to `pnpm db:start` and `pnpm db:types`.
+- Run Playwright with `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium`.
+- `ui.shadcn.com` is blocked: copy component sources from the shadcn GitHub repo (see
+  `docs/ARCHITECTURE.md` §1).
+- An e2e build bakes in `NEXT_PUBLIC_SITE_URL=http://localhost:3100`, so rebuild before `pnpm start`.
 
 ## Conventions
 
-- **Schema:** `supabase/migrations/` is the source of truth. Never edit an applied migration; add a
-  new one, then run `pnpm db:types`.
+- **Schema:** `supabase/migrations/` is the source of truth. Never edit an existing migration; add a
+  new one, then run `pnpm db:types`. (Stage 1's migrations were corrected in place once, before any
+  hosted project existed.)
+- **Seeds run under plain Node** (type stripping): `scripts/**` and what they import (`src/lib/dates.ts`,
+  `src/lib/team-emails.ts`) use relative `.ts` imports and erasable TypeScript only.
 - **RLS on every table.** Team members can view and edit everything. Infra tables (keys, webhooks)
   are server-only.
 - **Business rules that must apply to both the UI and the bot** (audit, created_by, events,
