@@ -8,7 +8,6 @@ import {
   formatDateRange,
   formatTimeRange,
   groupByWeekday,
-  keyResultProgress,
   plural,
   splitCrunchPeriods,
   toHourMinute,
@@ -151,30 +150,6 @@ describe("crunch period text", () => {
     expect(crunchTiming(period("a", "2026-10-12", "2026-10-15"), today)).toBe("Starts tomorrow")
     expect(crunchTiming(period("a", "2026-12-07", "2026-12-18"), today)).toBe("Starts Dec 7")
     expect(crunchTiming(period("a", "2026-09-01", "2026-10-01"), today)).toBe("Ended Oct 1")
-  })
-})
-
-describe("keyResultProgress", () => {
-  it("measures from the start value to the target", () => {
-    expect(keyResultProgress({ start: 0, target: 10, current: 4 })).toBe(40)
-    expect(keyResultProgress({ start: 5, target: 15, current: 10 })).toBe(50)
-  })
-
-  it("works when the target is below the start", () => {
-    expect(keyResultProgress({ start: 12, target: 8, current: 10 })).toBe(50)
-  })
-
-  it("clamps to 0–100", () => {
-    expect(keyResultProgress({ start: 0, target: 10, current: 25 })).toBe(100)
-    expect(keyResultProgress({ start: 0, target: 10, current: -3 })).toBe(0)
-  })
-
-  it("is 0 when the target equals the start (the database forbids it anyway)", () => {
-    expect(keyResultProgress({ start: 3, target: 3, current: 3 })).toBe(0)
-  })
-
-  it("rounds to whole percent", () => {
-    expect(keyResultProgress({ start: 0, target: 3, current: 1 })).toBe(33)
   })
 })
 

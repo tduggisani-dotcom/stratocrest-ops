@@ -1,6 +1,7 @@
 import { CalendarRangeIcon } from "lucide-react"
 import { EmptyState } from "@/components/common/empty-state"
 import { firstNameOf } from "@/components/common/person-chip"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { removeCrunchPeriod } from "@/features/people/actions"
 import { crunchTiming, formatDateRange, type CrunchPeriodView } from "@/features/people/format"
@@ -13,7 +14,10 @@ import { RemoveButton } from "./remove-button"
 const SECTION_ID = "crunch"
 const ADD_HEADING_ID = "crunch-add-heading"
 
-/** "Crunch periods": current and upcoming first (current ones marked amber), then recent past. */
+/**
+ * "Crunch periods": current and upcoming first (a current one marked "Now"),
+ * then recent past. Neutral styling: amber is only for "stale" (spec §7).
+ */
 export function CrunchSection({
   personId,
   name,
@@ -89,29 +93,23 @@ function CrunchList({
   return (
     <ul aria-labelledby={labelledBy} className="divide-y rounded-xl border">
       {periods.map((period) => (
-        <li
-          key={period.id}
-          className={cn(
-            "flex items-center justify-between gap-3 px-4 py-2",
-            period.isCurrent && "bg-stale-soft",
-          )}
-        >
+        <li key={period.id} className="flex items-center justify-between gap-3 px-4 py-2">
           <div className={cn("min-w-0 py-1", muted && "text-muted-foreground")}>
-            <p className="text-sm font-medium break-words">{period.label}</p>
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+              <span className="min-w-0 break-words">{period.label}</span>
+              {/* A marker to spot at a glance; the timing below says "Happening now". */}
+              {period.isCurrent ? (
+                <Badge variant="outline" aria-hidden>
+                  Now
+                </Badge>
+              ) : null}
+            </p>
             <p className="text-sm">
               <span className="tabular-nums">
                 {formatDateRange(period.startDate, period.endDate)}
               </span>
               <span aria-hidden> · </span>
-              <span
-                className={cn(
-                  !period.isCurrent && "text-muted-foreground",
-                  period.isCurrent && "inline-flex items-center gap-1.5 font-medium text-stale",
-                )}
-              >
-                {period.isCurrent ? (
-                  <span aria-hidden className="size-2 rounded-full bg-stale" />
-                ) : null}
+              <span className={period.isCurrent ? "font-medium" : "text-muted-foreground"}>
                 {crunchTiming(period, today)}
               </span>
             </p>

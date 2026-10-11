@@ -9,14 +9,18 @@ import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { addAvailabilityBlock } from "@/features/people/actions"
 import { WEEKDAYS } from "@/features/people/format"
+import { withConnectionErrors } from "@/lib/action-calls"
 import { initialFormState } from "@/lib/forms"
 import { AVAILABILITY_LABELS, availabilityLabelLabels } from "@/lib/labels"
 import { PEOPLE_LIMITS } from "@/lib/schemas/people"
 import { fieldValue, formKey, invalidProps, useFormFeedback } from "./use-form-feedback"
 
+// A request that fails (no signal, server error) keeps what was typed.
+const addBlock = withConnectionErrors(addAvailabilityBlock)
+
 /** Add one weekly busy time (class, work, other) for `personId`. Times are ET. */
 export function AvailabilityForm({ personId, headingId }: { personId: string; headingId: string }) {
-  const [state, formAction] = useActionState(addAvailabilityBlock, initialFormState)
+  const [state, formAction] = useActionState(addBlock, initialFormState)
   const formRef = useRef<HTMLFormElement>(null)
   useFormFeedback(state, formRef)
   const errors = state.fieldErrors ?? {}

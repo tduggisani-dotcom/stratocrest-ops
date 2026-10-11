@@ -5,8 +5,8 @@ import { PersonChip } from "@/components/common/person-chip"
 import { Button } from "@/components/ui/button"
 import { requireTeamMember } from "@/lib/auth"
 import { formatDate } from "@/lib/dates"
+import { krPercent, krProgressText } from "@/lib/okr"
 import { cn } from "@/lib/utils"
-import { krProgress, krProgressText, progressPercent } from "../logic"
 import { getOkrProgress, requestClock, type OkrProgress, type WeekKeyResult } from "../queries"
 import { MoreLink, SectionCard } from "./section-card"
 import { SECTIONS } from "./sections"
@@ -33,7 +33,7 @@ function quarterLine(q: Quarter): string {
 
 /** One key result as an accessible, CSS-only progress bar. Done is green; otherwise the accent. */
 function KeyResultBar({ kr }: { kr: WeekKeyResult }) {
-  const percent = progressPercent(krProgress(kr))
+  const percent = krPercent(kr)
   const text = krProgressText(kr)
   const labelId = `kr-${kr.id}`
   return (

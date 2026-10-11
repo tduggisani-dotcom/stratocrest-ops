@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { addDays, formatDate, todayEt } from "@/lib/dates"
-import { cleanUpE2eRows, e2eLabel, keepProfile } from "./support/admin"
+import { cleanUpE2eRows, createCrunchPeriod, e2eLabel, keepProfile } from "./support/admin"
 import { collectConsoleErrors, snap, waitForContent } from "./support/page"
 import { getTeam, teammateFor } from "./support/team"
 
@@ -190,5 +190,32 @@ test("a crunch period can be added and removed", async ({ page }, testInfo) => {
   await expect(page.getByRole("button", { name: `Remove ${label} crunch period` })).toHaveCount(0)
   await expect(page.getByRole("heading", { name: "Crunch periods", exact: true })).toBeFocused()
   await expect(page.getByText("No crunch periods yet")).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test("a crunch period happening now is marked Now, without amber", async ({ page }, testInfo) => {
+  const errors = collectConsoleErrors(page)
+  const me = await teammateFor(testInfo.project.name, "session")
+  const today = todayEt()
+  const label = e2eLabel("Finals")
+  const end = addDays(today, 3)
+  await createCrunchPeriod({
+    person_id: me.id,
+    label,
+    start_date: addDays(today, -1),
+    end_date: end,
+  })
+  await page.goto(`/people/${me.id}`)
+  await waitForContent(page)
+
+  const row = page
+    .getByRole("list", { name: "Now and coming up" })
+    .getByRole("listitem")
+    .filter({ hasText: label })
+  await expect(row).toContainText(`Happening now · ends ${formatDate(end, "short")}`)
+  await expect(row.getByText("Now", { exact: true })).toBeVisible()
+  // Amber is the "stale" status colour only (spec §7): a crunch period is neutral.
+  await expect(row).not.toHaveClass(/stale/)
+  await expect(row.locator('[class*="stale"]')).toHaveCount(0)
   expect(errors).toEqual([])
 })

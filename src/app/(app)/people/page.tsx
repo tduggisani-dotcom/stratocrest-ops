@@ -7,9 +7,9 @@ import { LiveRefresh } from "@/components/common/live-refresh"
 import { navItem } from "@/components/shell/nav-config"
 import { PageHeader } from "@/components/shell/page-header"
 import { Button } from "@/components/ui/button"
+import { FormerTeammates } from "@/features/people/components/former-teammates"
 import { PersonCard } from "@/features/people/components/person-card"
 import { PeopleGridSkeleton } from "@/features/people/components/skeletons"
-import { plural } from "@/features/people/format"
 import { listPeople } from "@/features/people/queries"
 import { requireTeamMember } from "@/lib/auth"
 
@@ -56,36 +56,7 @@ async function PeopleList() {
         />
       )}
 
-      {former.length > 0 ? (
-        <section aria-labelledby="former-heading" className="space-y-3">
-          <h2 id="former-heading" className="text-sm font-semibold text-muted-foreground">
-            Former teammates
-          </h2>
-          <ul className="divide-y rounded-xl border">
-            {former.map((person) => {
-              const open = person.openTasks + person.investorsOwned + person.customersOwned
-              return (
-                <li key={person.id}>
-                  <Link
-                    href={`/people/${person.id}`}
-                    className="flex min-h-11 flex-col gap-0.5 px-4 py-2.5 hover:bg-accent sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-                  >
-                    <span className="min-w-0">
-                      <span className="font-medium">{person.name}</span>
-                      <span className="text-muted-foreground"> · {person.role}</span>
-                    </span>
-                    {open > 0 ? (
-                      <span className="text-sm text-stale">
-                        {plural(open, "open item")} to hand over
-                      </span>
-                    ) : null}
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      ) : null}
+      {former.length > 0 ? <FormerTeammates people={former} /> : null}
     </div>
   )
 }

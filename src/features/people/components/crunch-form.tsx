@@ -7,13 +7,17 @@ import { SubmitButton } from "@/components/forms/submit-button"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { addCrunchPeriod } from "@/features/people/actions"
+import { withConnectionErrors } from "@/lib/action-calls"
 import { initialFormState } from "@/lib/forms"
 import { PEOPLE_LIMITS } from "@/lib/schemas/people"
 import { fieldValue, formKey, invalidProps, useFormFeedback } from "./use-form-feedback"
 
+// A request that fails (no signal, server error) keeps what was typed.
+const addPeriod = withConnectionErrors(addCrunchPeriod)
+
 /** Add a crunch period (finals, a deadline at work…) for `personId`. Dates are ET days. */
 export function CrunchForm({ personId, headingId }: { personId: string; headingId: string }) {
-  const [state, formAction] = useActionState(addCrunchPeriod, initialFormState)
+  const [state, formAction] = useActionState(addPeriod, initialFormState)
   const formRef = useRef<HTMLFormElement>(null)
   useFormFeedback(state, formRef)
   const errors = state.fieldErrors ?? {}

@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
 import { updateProfile } from "@/features/people/actions"
+import { withConnectionErrors } from "@/lib/action-calls"
 import { CLIFTON_STRENGTH_NAMES } from "@/lib/clifton-strengths"
 import { initialFormState } from "@/lib/forms"
 import { PEOPLE_LIMITS, STRENGTH_FIELDS, profileFieldName } from "@/lib/schemas/people"
@@ -33,13 +34,16 @@ export type ProfileFormPerson = {
 
 const RANKS = ["1st", "2nd", "3rd", "4th", "5th"] as const
 
+// A request that fails (no signal, server error) keeps what was typed.
+const saveProfile = withConnectionErrors(updateProfile)
+
 /**
  * Edit a profile: name, role, photo link, how to reach them, CliftonStrengths
  * top 5 (five ranked pickers, each optional) and skills (comma-separated).
  * Everyone can edit everyone's profile (spec §2).
  */
 export function ProfileForm({ person, isMe }: { person: ProfileFormPerson; isMe: boolean }) {
-  const [state, formAction] = useActionState(updateProfile, initialFormState)
+  const [state, formAction] = useActionState(saveProfile, initialFormState)
   const formRef = useRef<HTMLFormElement>(null)
   useFormFeedback(state, formRef, profileFieldName)
   const errors = state.fieldErrors ?? {}

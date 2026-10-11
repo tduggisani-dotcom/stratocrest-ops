@@ -3,9 +3,10 @@ import { addDays, formatDate, type IsoDate } from "@/lib/dates"
 import type { Enums } from "@/types/database"
 
 /**
- * Pure display helpers for people pages: weekdays, wall-clock times, crunch
- * periods and key-result progress. No time zones are involved: availability
- * times are ET wall-clock strings and crunch dates are ET calendar days.
+ * Pure display helpers for people pages: weekdays, wall-clock times and crunch
+ * periods (key-result progress is in src/lib/okr.ts). No time zones are
+ * involved: availability times are ET wall-clock strings and crunch dates are
+ * ET calendar days.
  */
 
 export type AvailabilityLabel = Enums<"availability_label">
@@ -130,19 +131,6 @@ export function crunchTiming(period: CrunchPeriodItem, today: IsoDate): string {
   }
   if (period.startDate === addDays(today, 1)) return "Starts tomorrow"
   return `Starts ${formatDate(period.startDate, "short")}`
-}
-
-/**
- * Key-result progress in whole percent, 0–100:
- * (current − start) / (target − start). Works for targets below the start too
- * (e.g. "cut cost per liner from $12 to $8").
- */
-export function keyResultProgress(kr: { start: number; target: number; current: number }): number {
-  const span = kr.target - kr.start
-  if (!Number.isFinite(span) || span === 0) return 0
-  const ratio = (kr.current - kr.start) / span
-  if (!Number.isFinite(ratio)) return 0
-  return Math.round(Math.min(1, Math.max(0, ratio)) * 100)
 }
 
 /** "1 open task" / "3 open tasks". */

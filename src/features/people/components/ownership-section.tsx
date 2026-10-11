@@ -8,12 +8,12 @@ import type { OwnedKeyResult, OwnedOrg, OwnedTask } from "@/features/people/quer
 import { newTaskHref, orgListHref, taskHref } from "@/features/tasks/links"
 import type { IsoDate } from "@/lib/dates"
 import { orgKindLabels, taskStatusLabels } from "@/lib/labels"
+import { krPercent, krProgressText } from "@/lib/okr"
+import { cn } from "@/lib/utils"
 import { EmptyLine, ProfileSection, SubHeading } from "./profile-section"
 
 const ROW =
   "-mx-2 flex min-h-11 flex-col gap-1 rounded-md px-2 py-2 hover:bg-accent focus-visible:bg-accent sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-
-const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 })
 
 /** "What they own": open investors/customers, key results, and open tasks. */
 export function OwnershipSection({
@@ -128,35 +128,40 @@ export function OwnershipSection({
           </SubHeading>
           {keyResults.length > 0 ? (
             <ul aria-labelledby="owns-krs" className="divide-y">
-              {keyResults.map((kr) => (
-                <li key={kr.id}>
-                  <Link href="/okrs" className={`${ROW} sm:flex-col sm:items-stretch sm:gap-1.5`}>
-                    <span className="min-w-0">
-                      <span className="block font-medium break-words">{kr.title}</span>
-                      <span className="block text-xs break-words text-muted-foreground">
-                        {kr.quarterLabel ? `${kr.quarterLabel} · ` : ""}
-                        {kr.objectiveTitle}
+              {keyResults.map((kr) => {
+                // The same rule as This Week: 100% (and green) only once the target is reached.
+                const percent = krPercent(kr)
+                return (
+                  <li key={kr.id}>
+                    <Link href="/okrs" className={`${ROW} sm:flex-col sm:items-stretch sm:gap-1.5`}>
+                      <span className="min-w-0">
+                        <span className="block font-medium break-words">{kr.title}</span>
+                        <span className="block text-xs break-words text-muted-foreground">
+                          {kr.quarterLabel ? `${kr.quarterLabel} · ` : ""}
+                          {kr.objectiveTitle}
+                        </span>
                       </span>
-                    </span>
-                    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span
-                        aria-hidden
-                        className="h-2 min-w-24 flex-1 basis-32 overflow-hidden rounded-full bg-muted"
-                      >
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <span
-                          className="block h-full rounded-full bg-primary"
-                          style={{ width: `${kr.progress}%` }}
-                        />
+                          aria-hidden
+                          className="h-2 min-w-24 flex-1 basis-32 overflow-hidden rounded-full bg-muted"
+                        >
+                          <span
+                            className={cn(
+                              "block h-full rounded-full",
+                              percent >= 100 ? "bg-good" : "bg-primary",
+                            )}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </span>
+                        <span className="min-w-0 text-sm break-words text-muted-foreground tabular-nums">
+                          {krProgressText(kr)} · {percent}%
+                        </span>
                       </span>
-                      <span className="min-w-0 text-sm break-words text-muted-foreground tabular-nums">
-                        {numberFormat.format(kr.currentValue)} of{" "}
-                        {numberFormat.format(kr.targetValue)}
-                        {kr.unit ? ` ${kr.unit}` : ""} · {kr.progress}%
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
+                    </Link>
+                  </li>
+                )
+              })}
             </ul>
           ) : (
             <EmptyLine

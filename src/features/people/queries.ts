@@ -7,7 +7,6 @@ import { createClient } from "@/lib/supabase/server"
 import type { Enums } from "@/types/database"
 import {
   countBy,
-  keyResultProgress,
   splitCrunchPeriods,
   toHourMinute,
   type AvailabilityBlock,
@@ -138,16 +137,16 @@ export type OwnedOrg = {
   nextStepDate: IsoDate
 }
 
+/** Progress is worked out where it's shown, with src/lib/okr.ts (the same rule as This Week). */
 export type OwnedKeyResult = {
   id: string
   title: string
   objectiveTitle: string
   quarterLabel: string | null
+  startValue: number
   currentValue: number
   targetValue: number
   unit: string | null
-  /** 0–100 */
-  progress: number
 }
 
 export type OwnedTask = {
@@ -285,14 +284,10 @@ export async function getProfile(id: string): Promise<PersonProfile | null> {
         quarterLabel: k.objectives.quarters?.label ?? null,
         quarterStart: k.objectives.quarters?.start_date ?? "",
         position: k.position,
+        startValue: Number(k.start_value),
         currentValue: Number(k.current_value),
         targetValue: Number(k.target_value),
         unit: k.unit,
-        progress: keyResultProgress({
-          start: Number(k.start_value),
-          target: Number(k.target_value),
-          current: Number(k.current_value),
-        }),
       }))
       // Latest quarter first, then the objective's own order.
       .sort(
