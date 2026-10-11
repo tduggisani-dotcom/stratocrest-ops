@@ -34,7 +34,6 @@ Small libraries I plan to add, each for a reason the spec's stack doesn't cover:
 | radix-ui, class-variance-authority, clsx, tailwind-merge, tw-animate-css | 1 | What the shadcn components are built on |
 | sonner | 1 | Toast messages; this is shadcn's toast component |
 | pg (dev) | 1 | Database tests talk to Postgres directly to simulate each role |
-| react-hook-form + @hookform/resolvers | 2 | Inline errors as you type, using the same Zod schema the server uses |
 | @tanstack/react-table (v8) | 3 | Sorting and filtering logic for the tracker table (shadcn's data-table pattern) |
 | @dnd-kit/core | 3 | Kanban drag and drop that also works by keyboard (accessibility) |
 | @asteasolutions/zod-to-openapi | 6 | Generates the OpenAPI 3.1 spec from our Zod schemas |
@@ -50,6 +49,13 @@ Changes made while building Stage 1:
 - **shadcn components were copied from the shadcn GitHub repo** (new-york-v4, Radix) because this
   environment blocks `ui.shadcn.com`. `components.json` is in place, so the shadcn CLI works
   wherever that site is reachable.
+
+Changes made while building Stage 2:
+
+- **No react-hook-form.** Forms are React 19 `useActionState` forms: the Server Action validates
+  with the shared Zod schema and returns inline field errors, and native HTML constraints
+  (`required`, `maxLength`, `type="date"`) catch the obvious ones before submitting. One validation
+  path, fewer libraries, and forms work before JavaScript loads.
 
 ### Stack adjustments (pushback, as allowed in spec §4)
 
@@ -214,9 +220,11 @@ the 1-minute job is the safety net that handles retries.
 
 ## 7. Live updates
 
-Each page has a small client component that subscribes to Supabase Realtime changes on the tables it
-shows and calls `router.refresh()` (debounced). Server components stay the only way pages are
-rendered. Realtime respects RLS, so it can't leak data.
+Each page has a small client component (`<LiveRefresh tables={[…]}>`) that subscribes to Supabase
+Realtime changes on the tables it shows and calls `router.refresh()` (debounced). Server components
+stay the only way pages are rendered. Realtime respects RLS, so it can't leak data. The tables a page
+can watch are `PUBLISHED_TABLES` in `src/components/common/live-refresh.tsx`; a database test checks
+that list against the `supabase_realtime` publication, so publish a new table in a migration first.
 
 ## 8. Testing and environments
 
