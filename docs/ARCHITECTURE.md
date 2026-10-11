@@ -224,9 +224,12 @@ the 1-minute job is the safety net that handles retries.
 ## 7. Live updates
 
 Each page has a small client component (`<LiveRefresh tables={[…]}>`) that subscribes to Supabase
-Realtime changes on the tables it shows and calls `router.refresh()` (debounced). Server components
-stay the only way pages are rendered. Realtime respects RLS, so it can't leak data. The tables a page
-can watch are `PUBLISHED_TABLES` in `src/components/common/live-refresh.tsx`; a database test checks
+Realtime changes on the tables it shows and calls `router.refresh()` (debounced). Realtime doesn't
+replay changes missed while a channel was down, so the page also refreshes once when its channel
+joins again (after a dropped connection, or when Back shows a page kept from earlier: remembered per
+`useRouter().bfcacheId`, so a page just opened by a link doesn't refresh twice) and when the tab
+becomes visible. Server components stay the only way pages are rendered. Realtime respects RLS, so
+it can't leak data. The tables a page can watch are `PUBLISHED_TABLES` in `src/components/common/live-refresh.tsx`; a database test checks
 that list against the `supabase_realtime` publication, so publish a new table in a migration first.
 
 ## 8. Testing and environments
