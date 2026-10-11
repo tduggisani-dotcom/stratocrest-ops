@@ -19,7 +19,7 @@ _Last updated: 2026-10-10 (Stage 1)_
 
 - **Database:** 11 migrations implementing `docs/DATA_MODEL.md`. Covers:
   - every table, with Row Level Security and privileges reset to nothing, then granted exactly;
-  - common-columns and audit triggers, plus `undo_activity()`;
+  - common-columns and audit triggers, plus `undo_activity()` (undoes a whole change, safely);
   - business rules (last contact date, automatic debriefs, events, immutable org kind);
   - the scheduled checks on `pg_cron` every 15 minutes (next Sunday meeting with a rotating
     facilitator, held meetings, due debriefs, de-duplicated events);
@@ -40,22 +40,28 @@ _Last updated: 2026-10-10 (Stage 1)_
     Synthe6 rows, quarters, and the four starter checklist templates.
   - `pnpm seed:demo`: dev-only `[DEMO]` data.
 - **Tests:**
-  - 273 unit tests.
-  - 115 database tests: privileges, RLS, attribution, audit, undo, rules, scheduled checks, views.
+  - 279 unit tests.
+  - 127 database tests: privileges, RLS, attribution, audit, undo, rules, scheduled checks, views.
   - 57 Playwright tests at desktop and 390 px, using the real sign-in flow.
 - **CI:** `.github/workflows/ci.yml` runs checks, database and e2e jobs against a temporary local
   Supabase on every push. `db-migrate.yml` applies migrations: dev when started by hand, production
   on merge to `main`.
+- **Adversarial review:** four reviewers (security, database, Next.js/React, spec) each had a skeptic
+  try to refute every finding. All 11 confirmed findings are fixed, with tests that fail without
+  the fix. The database fixes are in migrations `20261011000100` and `20261011000200`.
 
 ## Still needed from you (none of it blocks Stage 2)
 
-1. **Supabase accounts:** `docs/SETUP.md` Part A, steps A1–A3 and A5. A4 is now optional.
-2. **Sign-in email domain:** Part B. Until then, only the person who created the Supabase organization
-   can receive sign-in emails from a hosted project.
-3. **How the Grok bot runs** (open question 4 from Stage 0). This decides Stage 6.
-4. **Google account and the new Sheet/Calendar:** open question 5, needed by Stage 6.
-5. **Synthe6 session times:** sessions show as all-day until then.
-6. **Hosting plan:** Vercel Hobby vs Pro, needed by Stage 7.
+1. **Supabase accounts:** `docs/SETUP.md` Part A, steps A1–A3 and A5. A4 is now optional. The
+   migration secrets go in GitHub **environments** (`dev`, and `production` locked to `main`).
+2. **Sign-in settings in each hosted Supabase project:** `docs/SETUP.md` **B2**. This turns off
+   public sign-ups, sets the redirect URLs, and pastes the email template.
+3. **Sign-in email domain:** Part B1. Until then, only the person who created the Supabase
+   organization can receive sign-in emails from a hosted project.
+4. **How the Grok bot runs** (open question 4 from Stage 0). This decides Stage 6.
+5. **Google account and the new Sheet/Calendar:** open question 5, needed by Stage 6.
+6. **Synthe6 session times:** sessions show as all-day until then.
+7. **Hosting plan:** Vercel Hobby vs Pro, needed by Stage 7.
 
 ## Decisions made
 
@@ -86,6 +92,12 @@ _Last updated: 2026-10-10 (Stage 1)_
 | 2026-10-10 | `createClient()` awaits `connection()` | Stops ~700 prefetch errors per browse (supabase-js reads `Date.now()`) |
 | 2026-10-10 | Stage 1 migrations were corrected in place, before any hosted project existed. From now on, only new migrations | Clean schema history before first deploy |
 | 2026-10-10 | Migrations go to dev **by hand** (GitHub → Actions → Run workflow) and to production on merge to `main`; `db push --skip-vault` | Production changes only from reviewed code |
+| 2026-10-11 | Undo reverses a whole **change**: everything one statement did, triggers included. It refuses when a record changed since (unless forced), never cascades, and restores completion stamps | Adversarial review: the per-row version could wipe a week's meeting updates in one click |
+| 2026-10-11 | An org's **last contact is derived** in `org_overview` (latest meeting that happened, or contact entered by hand); a debrief nobody has started follows its meeting | A meeting moved or undone could otherwise hide a stale investor for 14 days |
+| 2026-10-11 | `next=` redirects are resolved like a browser would before they're checked | `/.//evil.com` slipped past the raw-string check |
+| 2026-10-11 | Logins link to people only once their email is confirmed; the seed refuses to adopt an unconfirmed login | Closes account pre-hijacking if sign-ups are ever left on |
+| 2026-10-11 | A failed people lookup is an error (retry screen), not "not on team" | A database blip must never sign a teammate out everywhere |
+| 2026-10-11 | Migration secrets live in GitHub environments, production locked to `main` | Repository secrets are readable from any branch |
 
 ## Known issues
 
@@ -99,7 +111,7 @@ _Last updated: 2026-10-10 (Stage 1)_
   local email limit.
 - **Supabase free plan** pauses after 7 idle days and has no automatic backups. Decide on a weekly
   backup in Stage 7.
-- **Vercel Hobby terms:** see "Still needed from you" item 6.
+- **Vercel Hobby terms:** see "Still needed from you" item 7.
 
 ## Next steps
 

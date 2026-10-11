@@ -46,8 +46,8 @@ differently, look for the closest match, or ask me.
    If you only see **anon** and **service_role** keys (the older names), use **anon** as the
    publishable key and **service_role** as the secret key. The secret key bypasses all security, so
    treat it like the database password.
-6. **Don't change any Authentication settings yet.** In Stage 1 I'll walk you through turning off
-   public sign-ups, setting the redirect URLs, and pasting in the email template.
+6. **Then do B2 below for each project** (sign-in settings). Until you do, public sign-ups are on
+   and the sign-in emails won't contain the 6-digit code.
 
 ### A2. Supabase access token (lets GitHub apply database changes)
 
@@ -138,8 +138,8 @@ one, see the option at the end of this part.
    - **Permission:** *Sending access*
    - **Domain:** your domain
    - Copy the key (shown once) and save it as *"Resend SMTP key"*.
-6. We'll paste it into Supabase together in Stage 1:
-   - **Authentication** → **Emails** → **SMTP Settings**
+6. In **each** Supabase project (dev and prod): **Authentication** → **Emails** → **SMTP Settings**
+   → turn on **Enable custom SMTP**, fill in the values below, and click **Save**:
    - **Host:** `smtp.resend.com`
    - **Port:** `465`
    - **Username:** `resend`
@@ -149,6 +149,32 @@ one, see the option at the end of this part.
 **No domain?** Either buy one (about $10–15 a year) and follow the steps above, or use a
 company Gmail or Google Workspace account's SMTP with an **app password** (requires 2-Step
 Verification). Tell me which, and I'll write those steps.
+
+### B2. Sign-in settings in each Supabase project (do this for dev, then prod)
+
+The local copy of Supabase gets these from `supabase/config.toml` automatically; hosted projects
+need them set by hand once. Open the project at https://supabase.com/dashboard, then:
+
+1. **Turn off public sign-ups.** **Authentication** → **Sign In / Providers** → under **User
+   Signups**, turn **off** "Allow new users to sign up" → **Save**. Leave the **Email** provider
+   **on**. Under **Email**, set **Email OTP Length** to `6` and **Email OTP Expiration** to `3600`
+   seconds → **Save**.
+   *Why:* only the six teammates should have logins (`pnpm seed` creates them). With sign-ups on,
+   anyone could create accounts and use up the email allowance.
+2. **Set the app's address.** **Authentication** → **URL Configuration**:
+   - **Site URL:** your app's address, e.g. `https://ops.yourdomain.com`. For the dev project before
+     the app is deployed, use `http://localhost:3000`.
+   - **Redirect URLs** → **Add URL**: `https://ops.yourdomain.com/**`. On the dev project also add
+     `http://localhost:3000/**`. Click **Save**.
+   *Why:* the sign-in link must come back to the app (and keep the page you were going to).
+3. **Paste the email template.** **Authentication** → **Emails** → **Templates** → **Magic Link**:
+   - **Subject:** `Your StratoCrest Ops sign-in code`
+   - **Body:** open `supabase/templates/magic_link.html` from this repository on GitHub, click
+     **Raw**, select all, copy, and paste it over the existing body → **Save**.
+   *Why:* the default email has no 6-digit code, and its link uses a format the app doesn't accept.
+4. **Email sending:** do B1 step 6 (custom SMTP) for this project too.
+5. **Check it:** run the sign-in once with your own email. The email should show a large 6-digit
+   code and a "Sign in" button.
 
 ---
 

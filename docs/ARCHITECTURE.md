@@ -142,11 +142,14 @@ Unit tests sit next to the code they test (`*.test.ts`).
 - **Link scanners.** The link goes to `/auth/confirm`, which shows a "Sign in" button rather than
   signing in on page load. Corporate and school email scanners that open links automatically can't
   use up the link.
-- **Who can sign in.** Public sign-ups are **turned off** in Supabase. `pnpm seed` creates the six
+- **Who can sign in.** Public sign-ups are **turned off** in Supabase (locally by
+  `supabase/config.toml`; on hosted projects by hand, `docs/SETUP.md` B2). `pnpm seed` creates the six
   logins from `TEAM_EMAILS`. The sign-in form only sends a code to an active person's email.
-  - **Proposed change from the spec (needs your OK):** after the first seed, the `people` table *is*
-    the allowlist. Adding a teammate (People → Add, or Recruiting → "Joined") creates their profile
-    and login without a redeploy. Deactivating someone blocks them immediately.
+  - **Decided (Stage 0 default, accepted):** after the first seed, the `people` table *is* the
+    allowlist. Adding a teammate (People → Add, or Recruiting → "Joined") creates their profile and
+    login without a redeploy. Deactivating someone blocks them immediately.
+  - A login is linked to its person (by email) only once the login's email is confirmed, so an
+    account someone else signed up with can never take over a teammate's profile.
 - **Defense in depth:** `proxy.ts` redirects signed-out visitors. Every server page calls
   `requireTeamMember()`. Row Level Security is the final guard (`docs/DATA_MODEL.md` §6).
 - **Secret key:** the Supabase secret key and Google credentials are only imported from
