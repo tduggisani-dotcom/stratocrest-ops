@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/browser"
 
 /**
- * Tables published to Supabase Realtime (migrations 20261010001100 and
- * 20261011000300). tests/db/reference-data.test.ts checks this list against
+ * Tables published to Supabase Realtime (migrations 20261010001100,
+ * 20261011000300 and 20261012000100). tests/db/reference-data.test.ts checks this list against
  * the database's publication.
  */
 export const PUBLISHED_TABLES = [
@@ -20,6 +20,7 @@ export const PUBLISHED_TABLES = [
   "org_meetings",
   "org_meeting_attendees",
   "hypotheses",
+  "hypothesis_tests",
   "team_meetings",
   "meeting_updates",
   "decisions",
