@@ -53,7 +53,16 @@ async function Profile({ params }: Pick<PageProps<"/people/[id]">, "params">) {
   const isMe = person.id === me.id
   return (
     <>
-      <LiveRefresh tables={["people", "tasks", "organizations", "key_results"]} />
+      <LiveRefresh
+        tables={[
+          "people",
+          "availability_blocks",
+          "crunch_periods",
+          "tasks",
+          "organizations",
+          "key_results",
+        ]}
+      />
       <ProfileHeader person={person} isMe={isMe} />
       <div className="space-y-12">
         <OwnershipSection

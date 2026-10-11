@@ -4,24 +4,34 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/browser"
 
-/** Tables published to Supabase Realtime (migration 20261010001100). */
-export type LiveTable =
-  | "people"
-  | "synthe6_sessions"
-  | "objectives"
-  | "key_results"
-  | "organizations"
-  | "org_meetings"
-  | "hypotheses"
-  | "team_meetings"
-  | "meeting_updates"
-  | "decisions"
-  | "debriefs"
-  | "tasks"
-  | "action_items"
-  | "checklist_items"
-  | "candidates"
-  | "help_requests"
+/**
+ * Tables published to Supabase Realtime (migrations 20261010001100 and
+ * 20261011000300). tests/db/reference-data.test.ts checks this list against
+ * the database's publication.
+ */
+export const PUBLISHED_TABLES = [
+  "people",
+  "availability_blocks",
+  "crunch_periods",
+  "synthe6_sessions",
+  "objectives",
+  "key_results",
+  "organizations",
+  "org_meetings",
+  "org_meeting_attendees",
+  "hypotheses",
+  "team_meetings",
+  "meeting_updates",
+  "decisions",
+  "debriefs",
+  "tasks",
+  "action_items",
+  "checklist_items",
+  "candidates",
+  "help_requests",
+] as const
+
+export type LiveTable = (typeof PUBLISHED_TABLES)[number]
 
 /**
  * Live updates (spec §7): when a teammate (or the bot) changes one of `tables`,

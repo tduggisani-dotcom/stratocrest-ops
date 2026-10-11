@@ -23,6 +23,7 @@ const LIVE_TABLES = [
   "tasks",
   "organizations",
   "org_meetings",
+  "org_meeting_attendees",
   "debriefs",
   "help_requests",
   "team_meetings",
@@ -30,6 +31,7 @@ const LIVE_TABLES = [
   "objectives",
   "key_results",
   "synthe6_sessions",
+  "people",
 ] as const satisfies readonly LiveTable[]
 
 /**

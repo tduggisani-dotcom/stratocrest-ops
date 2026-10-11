@@ -20,7 +20,7 @@ export default function TasksPage({ searchParams }: PageProps<"/tasks">) {
   const section = navItem("/tasks")
   return (
     <>
-      <LiveRefresh tables={["tasks"]} />
+      <LiveRefresh tables={["tasks", "people", "crunch_periods"]} />
       <PageHeader
         title={section.label}
         description={section.description}

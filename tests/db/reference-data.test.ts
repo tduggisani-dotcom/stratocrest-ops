@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "vitest"
+import { PUBLISHED_TABLES } from "@/components/common/live-refresh"
 import {
   AVAILABILITY_LABELS,
   CANDIDATE_STAGES,
@@ -107,6 +108,20 @@ describe("enums", () => {
         if (name === "actor_kind") continue
         expect([...values].sort(), name).toEqual([...mirrors[name]].sort())
       }
+    })
+  })
+})
+
+describe("realtime", () => {
+  test("the tables LiveRefresh can watch are exactly the ones published to Realtime", async () => {
+    await withTx(async (db) => {
+      const published = await rows<{ tablename: string }>(
+        db,
+        `select tablename from pg_publication_tables
+          where pubname = 'supabase_realtime' and schemaname = 'public'
+          order by tablename`,
+      )
+      expect(published.map((row) => row.tablename)).toEqual([...PUBLISHED_TABLES].sort())
     })
   })
 })
