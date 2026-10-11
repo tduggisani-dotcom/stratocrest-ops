@@ -55,7 +55,10 @@ Changes made while building Stage 2:
 - **No react-hook-form.** Forms are React 19 `useActionState` forms: the Server Action validates
   with the shared Zod schema and returns inline field errors, and native HTML constraints
   (`required`, `maxLength`, `type="date"`) catch the obvious ones before submitting. One validation
-  path, fewer libraries, and forms work before JavaScript loads.
+  path, fewer libraries.
+- **Failed requests don't replace the page.** Client code calls Server Actions through
+  `src/lib/action-calls.ts`: a dropped connection or server error becomes the normal error toast or
+  form message (with what was typed kept), instead of the error screen.
 
 ### Stack adjustments (pushback, as allowed in spec §4)
 

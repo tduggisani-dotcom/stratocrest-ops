@@ -1,9 +1,10 @@
 import type { z } from "zod"
 
 /**
- * What a form's Server Action returns to `useActionState`. Forms are plain
- * `<form action={…}>` elements (they work before JavaScript loads), validated on
- * the server with the same Zod schema the bot API uses.
+ * What a form's Server Action returns to `useActionState`. Forms are
+ * `<form action={…}>` elements validated on the server with the same Zod schema
+ * the bot API uses. Wrap the action with `withConnectionErrors`
+ * (src/lib/action-calls.ts) so a failed request keeps what was typed.
  */
 export type FormState<Field extends string = string> = {
   status: "idle" | "error" | "success"
