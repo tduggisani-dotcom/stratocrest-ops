@@ -10,8 +10,19 @@ import { deleteEmailsTo, waitForSignInEmail, type SignInEmail } from "./mailpit"
 /** Browser state with nobody signed in, for `test.use({ storageState: signedOut })`. */
 export const signedOut = { cookies: [], origins: [] }
 
+/**
+ * Supabase sends one sign-in email per address per `max_frequency` (1 s locally, 60 s hosted)
+ * and answers a quicker second request with "Too many attempts". Tests that email the same
+ * teammate back to back wait out that gap instead of racing it.
+ */
+const MIN_EMAIL_GAP_MS = 1_500
+const lastEmailedAt = new Map<string, number>()
+
 /** On /sign-in: fill the email and send the code. Leaves the page on the "Check your email" step. */
 export async function requestCode(page: Page, email: string): Promise<void> {
+  const wait = (lastEmailedAt.get(email) ?? 0) + MIN_EMAIL_GAP_MS - Date.now()
+  if (wait > 0) await page.waitForTimeout(wait)
+  lastEmailedAt.set(email, Date.now())
   await page.getByLabel("Email").fill(email)
   await page.getByRole("button", { name: "Email me a code" }).click()
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible()
