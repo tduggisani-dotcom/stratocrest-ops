@@ -1,19 +1,54 @@
 # PROGRESS — StratoCrest Ops
 
-_Last updated: 2026-10-10 (Stage 1)_
+_Last updated: 2026-10-11 (Stage 2)_
 
 ## Stages
 
 | Stage | Status |
 |---|---|
 | 0 — Plan | ✅ Done. Defaults accepted ("looks good continue", 2026-10-09). |
-| 1 — Foundation | ✅ Done. Waiting for your "go" for Stage 2. |
-| 2 — This Week + Tasks + People basics | ⏭ Next (file outline below) |
-| 3 — Investor Tracker → Customer Pipeline + hypothesis roll-up | — |
+| 1 — Foundation | ✅ Done ("go", 2026-10-11) |
+| 2 — This Week + Tasks + People basics | ✅ Done. Waiting for your "go" for Stage 3. |
+| 3 — Investor Tracker → Customer Pipeline + hypothesis roll-up | ⏭ Next (file outline below) |
 | 4 — Meetings, Debriefs, Synthe6 timeline | — |
 | 5 — OKRs, Checklists, Workload, Wins, Recruiting, Help | — |
 | 6 — Bot integration | — |
 | 7 — Polish and launch | — |
+
+## What Stage 2 built
+
+- **This Week** (the home page). It answers "what do I need to do?" before project status:
+  - **My work:** my open tasks, my investor/customer follow-ups due by Sunday, debriefs I owe.
+  - **Needs attention** (whole team): overdue tasks and follow-ups, investors and customers with no
+    contact in 14+ days, debriefs due, open help requests.
+  - Next Synthe6 session with a countdown; next Sunday meeting with its facilitator and who has
+    posted updates; org meetings in the next 7 days; OKR progress for the current or next quarter.
+  - Each card loads, and fails, on its own; the page updates live.
+- **Tasks** (`/tasks`, `/tasks/new`, `/tasks/[id]`):
+  - Owner, a concrete next action and a due date are required, with inline messages.
+  - Views: My tasks, By owner, By status, Due this week (through this Sunday).
+  - One-tap Done and a status menu on every row, with Undo; archive with Undo, and Restore.
+  - Optional links to an org, Synthe6 session, key result, Sunday meeting or org meeting.
+  - A gentle warning (never a block) when the due date falls in the owner's crunch period.
+- **People** (`/people`, `/people/[id]`): role, how to reach them, CliftonStrengths top 5, skills,
+  what they own (tasks, investors and customers, key results), weekly busy times (ET) and crunch
+  periods. Anyone on the team can edit any profile (spec §2).
+- **Live updates** on every Stage 2 page, including busy times, crunch periods and meeting
+  attendees (migration `20261011000300`). Pages catch up after a dropped connection or Back.
+- **Tests:**
+  - 602 unit tests.
+  - 132 database tests.
+  - 88 Playwright tests at desktop and 390 px (81 run, 7 apply to one screen size only).
+  - Two full runs in a row: 0 failed, 0 flaky.
+- **Adversarial review:**
+  - Four reviewers (security, Next.js/React, data and dates, spec/UX/accessibility), each with a
+    skeptic trying to refute every finding.
+  - Security found nothing. 11 findings were confirmed (10 distinct); all are fixed with tests, and
+    a skeptic then checked each fix.
+  - The fixes: failed requests no longer replace the page; focus and toasts behave after Back;
+    status Undo keeps the original completion time; the Sunday meeting card no longer goes blank
+    for an hour on Sundays; one key-result progress rule; amber only for "stale"; the e2e tests no
+    longer depend on the weekday.
 
 ## What Stage 1 built
 
@@ -50,7 +85,7 @@ _Last updated: 2026-10-10 (Stage 1)_
   try to refute every finding. All 11 confirmed findings are fixed, with tests that fail without
   the fix. The database fixes are in migrations `20261011000100` and `20261011000200`.
 
-## Still needed from you (none of it blocks Stage 2)
+## Still needed from you (none of it blocks Stage 3)
 
 1. **Supabase accounts:** `docs/SETUP.md` Part A, steps A1–A3 and A5. A4 is now optional. The
    migration secrets go in GitHub **environments** (`dev`, and `production` locked to `main`).
@@ -98,6 +133,24 @@ _Last updated: 2026-10-10 (Stage 1)_
 | 2026-10-11 | Logins link to people only once their email is confirmed; the seed refuses to adopt an unconfirmed login | Closes account pre-hijacking if sign-ups are ever left on |
 | 2026-10-11 | A failed people lookup is an error (retry screen), not "not on team" | A database blip must never sign a teammate out everywhere |
 | 2026-10-11 | Migration secrets live in GitHub environments, production locked to `main` | Repository secrets are readable from any branch |
+| 2026-10-11 | Forms use React's `useActionState` with server-side Zod validation and native HTML checks; **react-hook-form dropped** | One validation path, one library fewer |
+| 2026-10-11 | Client code calls Server Actions through `src/lib/action-calls.ts`: a lost connection or server error shows a toast or form error and keeps what was typed | Phones lose signal; the error screen used to wipe the form |
+| 2026-10-11 | "Due this week" = on or before this Sunday (ET); on a Sunday, that's today | Matches the Sunday meeting rhythm |
+| 2026-10-11 | A new task defaults to owner = me, due in 7 days; links can prefill it (`?owner`, `?due`, `?org`, `?session`, `?kr`, `?team_meeting`, `?org_meeting`, `?return_to`) | Fast entry from anywhere |
+| 2026-10-11 | Row status is a menu that saves only on a pick (opens on a finished tap on phones), plus a one-tap Done; Undo reverses the change with `undo_activity` | No accidental saves while arrowing or scrolling; Undo keeps the original completion time |
+| 2026-10-11 | After a status change moves a row, focus follows it (or the next task, or the list heading) | Keyboard and screen-reader users keep their place |
+| 2026-10-11 | Archive is a two-step button plus an Undo toast; an archived task keeps its page with a banner and Restore | No dialogs on phones; nothing is deleted |
+| 2026-10-11 | Amber is only for "stale". Crunch markers, warnings and hand-over notes are neutral (outline badge or muted box with a warning icon) | Spec §7 colour rule |
+| 2026-10-11 | On phones the task view tabs are a 2×2 grid | All four views stay visible at 390 px |
+| 2026-10-11 | This Week: each card has its own Suspense and error boundary; one clock per request; two columns from `lg` | Cards load and fail independently, all on the same "today" |
+| 2026-10-11 | CliftonStrengths: the 34 themes and domains in `src/lib/clifton-strengths.ts`; blank picks close up; duplicates rejected | Gallup's public taxonomy; stored in Gallup's spelling |
+| 2026-10-11 | Skills: comma- or line-separated, trimmed, repeats dropped ignoring case, ≤ 60 characters each, ≤ 30 | Simple to type on a phone |
+| 2026-10-11 | Key-result progress has one rule (`src/lib/okr.ts`): 100% only when the target is reached, ≥ 1% once started | Profile and This Week used to disagree |
+| 2026-10-11 | The next Sunday meeting is next week's as soon as today's is held or canceled (or at noon ET) | The card was blank 11:00–12:00 every Sunday |
+| 2026-10-11 | Live updates refresh once when a channel rejoins or Back restores a page, and when the tab becomes visible; `PUBLISHED_TABLES` is checked against the database | Realtime doesn't replay missed changes |
+| 2026-10-11 | Links to an investor or customer go to the list pages until Stage 3 adds detail pages | Detail pages come with the tracker |
+| 2026-10-11 | E2E runs send about 15 sign-in emails; leave 5 minutes between full local runs | Local email limit |
+| 2026-10-11 | `/favicon.ico` is rewritten to the app icon | Browsers request it; the 404 was a console error |
 
 ## Known issues
 
@@ -107,8 +160,16 @@ _Last updated: 2026-10-10 (Stage 1)_
   quickly shows the wait message. That's correct behavior.
 - **Account-menu focus ring:** after picking a theme with the mouse, the account button shows a focus
   ring. This is Radix returning focus for keyboard users; it's cosmetic.
-- **Local e2e runs send ~14 sign-in emails.** Running the suite 3+ times within 5 minutes hits the
+- **Local e2e runs send ~15 sign-in emails.** Running the suite 3+ times within 5 minutes hits the
   local email limit.
+- **Two people editing the same task or profile at once:** the last save wins.
+- **Help requests on This Week** don't yet show the item they're about; Stage 5 builds help requests.
+- **This Week runs about 13 small queries per load.** Fine for six people; one database function
+  could replace them if phones feel slow.
+- **The database doesn't check** that strengths are real theme names or that skills are ≤ 60
+  characters (the forms do). Add these checks in Stage 6, before the bot writes profiles.
+- **The account menu** in the header still opens on touch-down (Radix default). It's at the top of
+  the page, so a scroll rarely starts there.
 - **Supabase free plan** pauses after 7 idle days and has no automatic backups. Decide on a weekly
   backup in Stage 7.
 - **Vercel Hobby terms:** see "Still needed from you" item 7.
@@ -117,33 +178,40 @@ _Last updated: 2026-10-10 (Stage 1)_
 
 **You:**
 
-1. Try the review notes in the Stage 1 summary.
-2. Do `docs/SETUP.md` Part A when you can.
-3. Reply "go" for Stage 2.
+1. Try the review notes in the Stage 2 summary.
+2. Do `docs/SETUP.md` Parts A and B when you can (still not blocking).
+3. Reply "go" for Stage 3.
 
-**Stage 2 plan (This Week + Tasks + People basics), files to create or change:**
+**Stage 3 plan (Investor Tracker, then Customer Pipeline + hypothesis roll-up), files to create or
+change:**
 
-- **Schemas:** `src/lib/schemas/{tasks,people,availability}.ts` (+ tests). Owner, due date and next
-  action are required, with inline messages.
-- **Tasks:**
-  - `src/features/tasks/` (queries, actions, components).
-  - Create/edit form with owner picker, ET due date, and next action. Optional links to a key result,
-    session, org, or meeting.
-  - A crunch-period warning that warns but doesn't block.
-  - Views: My tasks, by owner, by status, due this week. Inline status change.
-- **Tasks route:** `src/app/(app)/tasks/` (list + `[id]`), replacing the placeholder.
-- **People:**
-  - `src/features/people/` and `src/app/(app)/people/` (list + `[id]` profile).
-  - Profile shows role, avatar, ownership, CliftonStrengths, skills, contact preference, availability
-    blocks, and crunch periods. Each can be edited; profile-field edits go through RLS. Email, active
-    flag and rotation order change through a server action using the admin client.
-- **This Week:** `src/features/this-week/` and `src/app/(app)/page.tsx`.
-  - My work (my open tasks, follow-ups, debriefs due) and Needs attention (overdue tasks and
-    follow-ups, 14-day stale orgs, debriefs due, open help requests).
-  - Next Synthe6 session with countdown; next Sunday meeting with facilitator and who has posted
-    updates; org meetings in the next 7 days; OKR progress (empty state until Stage 5).
-- **Live updates:** `src/components/common/live-refresh.tsx`, which subscribes to Supabase Realtime
-  and refreshes the page (debounced).
-- **Tests:** unit (schemas, crunch overlap, This Week grouping), DB (anything new), and e2e
-  (create a task, inline status change, profile edit, This Week sections, live update across two
-  browsers, 390 px).
+- **Libraries** (planned in Stage 0): `@tanstack/react-table` for sorting/filtering the tracker
+  table; `@dnd-kit/core` for the Kanban drag that also works by keyboard.
+- **Schemas:** `src/lib/schemas/{organizations,org-meetings,hypotheses}.ts` (+ tests). Owner, next
+  step and next-step date are required; a meeting rating is 1–5 with a one-line summary.
+- **One implementation for both kinds:** `src/features/orgs/` configured by `kind-config.ts`
+  (labels, stages from `org_stages`, subtypes, columns, empty states). Never forked.
+  - `queries.ts` on `org_overview` (latest and next meeting, last contact, stale, rating);
+    `actions.ts` (create/edit org, change stage, log meeting, add hypothesis/test).
+  - Table view: Company | Location | First contact | Meeting date (latest and next) | Coatl point
+    of contact | How it went (latest rating, colour-coded, plus a one-line summary). Sortable;
+    filters for stage, owner, region, rating, stale (14+ days), kept in the URL.
+  - Summary bar: total, count per stage, meetings this month, average rating, follow-ups due this
+    week.
+  - Kanban by stage with drag (and keyboard) to change stage.
+  - Detail page: contact info, meeting log, hypothesis log, linked tasks, debriefs, activity history
+    (from `activity_log`, with "via Grok" for bot changes).
+  - "Log a meeting" in at most 2 screens, then one-click prompts for the debrief and a follow-up
+    task (prefilled `/tasks/new`).
+  - CSV export of the current filtered view (a route handler that reuses the same query and
+    filters).
+  - Below `md`, the table becomes cards: company, location, meeting date, point of contact,
+    rating.
+- **Routes:** `src/app/(app)/investors/` and `src/app/(app)/customers/` (table, board, `[id]`): thin
+  pages that render `features/orgs` with a `kind`. `src/app/(app)/hypotheses/`: roll-up across both
+  kinds, grouped Untested / Validated / Invalidated.
+- **Links from Stage 2** (This Week, tasks, profiles) switch from the list pages to the new detail
+  pages.
+- **Tests:** unit (schemas, filters, summary maths, CSV), DB (anything new), and e2e (the spec's
+  "done when": add an investor, log two meetings with ratings, see the latest in the table, filter by
+  region, export CSV, all at 390 px; then the same for a customer, plus the hypothesis roll-up).

@@ -84,10 +84,14 @@ Versions are pinned exactly. Don't add a library without writing why in `PROGRES
 - **People first:** every item shows its owner (`<PersonChip>`: avatar + name).
 - **Lists:** every list has an empty state that explains what goes there and has a button to add the
   first item.
+- **Server Actions from client code** go through `src/lib/action-calls.ts` (`callAction`,
+  `withConnectionErrors`), so a lost connection shows an error instead of the error screen.
+- **Live updates:** `<LiveRefresh tables={[…]}>` on each page; publish a new table to Realtime in a
+  migration and add it to `PUBLISHED_TABLES` (a DB test checks they match).
 - **Mobile:** works at 390 px with no horizontal scroll; tap targets ≥ 44 px; tables become cards
   below `md`.
 - **Colour:** one accent colour. Status colours only: overdue = red, stale = amber, strong rating =
-  green.
+  green. Warnings that aren't status (crunch periods) are neutral with a warning icon.
 - **Secrets:** use `.env.local` and `.env.example`, and never commit values. The Supabase secret key
   and Google credentials are imported only from `server-only` modules.
 - **Seeds:** no invented business data. `pnpm seed` writes only people, the Synthe6 schedule,
