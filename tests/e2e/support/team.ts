@@ -1,15 +1,6 @@
-import { createClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/database"
-import { SUPABASE_SECRET_KEY, SUPABASE_URL } from "./env"
+import { admin } from "./admin"
 
-/**
- * The seeded teammates (`pnpm seed`), read from the database so the tests follow TEAM_EMAILS.
- * The secret key acts as "system", like a script; it never reaches the browser.
- */
-const admin = createClient<Database>(SUPABASE_URL, SUPABASE_SECRET_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-})
-
+/** A seeded teammate (`pnpm seed`), read from the database so the tests follow TEAM_EMAILS. */
 export type Teammate = { id: string; name: string; email: string; firstName: string }
 
 /**
@@ -17,10 +8,11 @@ export type Teammate = { id: string; name: string; email: string; firstName: str
  * own people, so signing out never ends a session other tests rely on. Tests run one at a time
  * (one worker) and clear an address's emails before using it, so no test reads another's code.
  * Indexes follow the team order (`sort_order`): John, Taeyoon, Brad, Sam, Ian, Tanush.
+ * `live` is the second browser in the live-update test (desktop only); it never signs out.
  */
 const CAST = {
-  desktop: { session: 0, code: 1, link: 2, signOut: 3 },
-  mobile: { session: 4, code: 3, link: 2, signOut: 1 },
+  desktop: { session: 0, code: 1, link: 2, signOut: 3, live: 3 },
+  mobile: { session: 4, code: 3, link: 2, signOut: 1, live: 1 },
 } as const
 
 type Role = keyof (typeof CAST)["desktop"]

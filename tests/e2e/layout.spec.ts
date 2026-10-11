@@ -1,34 +1,16 @@
-import { expect, test, type Locator } from "@playwright/test"
+import { expect, test } from "@playwright/test"
 import { NAV_ITEMS } from "@/components/shell/nav-config"
 import {
+  MIN_TAP,
   animationsDone,
   collectConsoleErrors,
   scrollsHorizontally,
+  smallTapTargets,
   snap,
   waitForContent,
 } from "./support/page"
 
 /** Signed in (global setup). Layout rules from CLAUDE.md: 390 px, no sideways scroll, 44 px taps. */
-
-const MIN_TAP = 44
-
-/** Links and buttons in `scope` smaller than a 44 × 44 px tap target. */
-async function smallTapTargets(scope: Locator): Promise<string[]> {
-  return scope.locator("a:visible, button:visible").evaluateAll(
-    (elements, min) =>
-      elements
-        .map((element) => {
-          const box = element.getBoundingClientRect()
-          const name =
-            element.getAttribute("aria-label") ?? element.textContent?.trim() ?? element.tagName
-          return { name, height: box.height, width: box.width }
-        })
-        // Round: at 3× pixel density a 44 px box can measure 43.99998.
-        .filter((target) => Math.round(target.height) < min || Math.round(target.width) < min)
-        .map((t) => `"${t.name}" is ${Math.round(t.width)} × ${Math.round(t.height)} px`),
-    MIN_TAP,
-  )
-}
 
 for (const item of NAV_ITEMS) {
   test(`${item.label} (${item.href}) fits the screen`, async ({ page }, testInfo) => {

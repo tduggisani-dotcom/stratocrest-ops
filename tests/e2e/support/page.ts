@@ -58,3 +58,78 @@ export async function snap(
     fullPage: options.fullPage ?? false,
   })
 }
+
+/** The smallest tap target allowed on phones (CLAUDE.md: tap targets ≥ 44 px). */
+export const MIN_TAP = 44
+
+const TAP_TARGETS = [
+  "a:visible",
+  "button:visible",
+  "summary:visible",
+  "input:visible",
+  "select:visible",
+  "textarea:visible",
+].join(", ")
+
+/**
+ * Links, buttons, disclosure summaries and form controls in `scope` smaller than a 44 × 44 px
+ * tap target, as readable messages (empty when all are big enough). Measured as a finger meets
+ * them: a "stretched" link (its ::after covers a card) by the card, and a radio button or
+ * checkbox by its <label>.
+ */
+export async function smallTapTargets(scope: Locator): Promise<string[]> {
+  return scope.locator(TAP_TARGETS).evaluateAll(
+    (elements, min) =>
+      elements
+        .map((element) => {
+          let target: Element = element
+          const after = getComputedStyle(element, "::after")
+          if (
+            element instanceof HTMLElement &&
+            after.position === "absolute" &&
+            after.content !== "none" &&
+            after.content !== "normal" &&
+            element.offsetParent
+          ) {
+            target = element.offsetParent
+          } else if (
+            element instanceof HTMLInputElement &&
+            (element.type === "radio" || element.type === "checkbox")
+          ) {
+            target = element.closest("label") ?? element
+          }
+          const box = target.getBoundingClientRect()
+          const name =
+            element.getAttribute("aria-label") ??
+            (element.textContent?.trim() ||
+              (element.id &&
+                document.querySelector(`label[for="${CSS.escape(element.id)}"]`)?.textContent) ||
+              element.getAttribute("name") ||
+              element.tagName)
+          return { name: name.trim(), height: box.height, width: box.width }
+        })
+        // Round: at 3× pixel density a 44 px box can measure 43.99998.
+        .filter((target) => Math.round(target.height) < min || Math.round(target.width) < min)
+        .map((t) => `"${t.name}" is ${Math.round(t.width)} × ${Math.round(t.height)} px`),
+    MIN_TAP,
+  )
+}
+
+/**
+ * Tap targets in `scope` that stick out past the left or right edge of the screen: the page
+ * itself doesn't scroll, but a row that scrolls (or clips) inside itself hides them.
+ */
+export async function offScreenTapTargets(scope: Locator): Promise<string[]> {
+  return scope.locator(TAP_TARGETS).evaluateAll((elements) =>
+    elements
+      .map((element) => {
+        const box = element.getBoundingClientRect()
+        const name =
+          element.getAttribute("aria-label") ??
+          (element.textContent?.trim() || element.getAttribute("name") || element.tagName)
+        return { name: name.trim(), left: box.left, right: box.right }
+      })
+      .filter((t) => Math.round(t.left) < 0 || Math.round(t.right) > window.innerWidth)
+      .map((t) => `"${t.name}" spans ${Math.round(t.left)}–${Math.round(t.right)} px`),
+  )
+}
