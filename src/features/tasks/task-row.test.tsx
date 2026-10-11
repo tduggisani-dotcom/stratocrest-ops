@@ -25,9 +25,9 @@ const task: TaskListItem = {
   organization: { id: "o1", name: "Example Seed Fund", kind: "investor" },
 }
 
-/** The <option> that a select starts on. */
-function selectedOption(value: string, label: string) {
-  return new RegExp(`<option[^>]* value="${value}" selected="">${label}<`)
+/** The status menu's button, from its opening tag to its closing tag. */
+function statusButton(html: string) {
+  return /<button[^>]*data-task-control="status"[^>]*>.*?<\/button>/.exec(html)?.[0] ?? ""
 }
 
 function render(props: Partial<Parameters<typeof TaskRow>[0]> = {}) {
@@ -50,17 +50,35 @@ describe("TaskRow", () => {
     expect(html).toContain("Example Seed Fund")
   })
 
-  it("has a labelled status select and a one-tap done toggle", () => {
+  it("has a status menu (not a <select> that saves while arrowing) and a one-tap done toggle", () => {
     const html = render()
-    expect(html).toContain("Status for Send the one-pager")
-    expect(html).toMatch(selectedOption("in_progress", "In Progress"))
+    expect(html).not.toContain("<select")
+    const button = statusButton(html)
+    expect(button).toContain('aria-haspopup="menu"')
+    // Named "Status for <title>: <status>".
+    expect(button).toContain(
+      '<span class="sr-only">Status for Send the one-pager: </span>In Progress</span>',
+    )
     expect(html).toContain('aria-pressed="false"')
     expect(html).toContain("Done: Send the one-pager")
   })
 
-  it("marks a crunch-period due date in amber, with the period for screen readers", () => {
+  it("marks the row, its title link and its controls, so focus can follow a moved row", () => {
+    const html = render()
+    expect(html).toMatch(/<li[^>]* data-task-id="t1"/)
+    expect(html).toMatch(/<a href="\/tasks\/t1" data-task-title/)
+    expect(html).toMatch(/<button[^>]* aria-pressed="false" data-task-control="done"/)
+  })
+
+  it("marks a crunch-period due date with a neutral badge (amber means stale), named for screen readers", () => {
     const html = render({ crunch: { label: "Finals" } })
-    expect(html).toContain("text-stale")
+    expect(html).not.toMatch(/stale|amber/)
+    const badge =
+      /<span data-slot="badge" data-variant="outline"[^>]*>(?:(?!<\/span><\/div>).)*?Crunch/.exec(
+        html,
+      )?.[0]
+    expect(badge).toBeDefined()
+    expect(badge).toContain("lucide-triangle-alert")
     expect(html).toContain("Due in Sam&#x27;s crunch period: Finals")
   })
 

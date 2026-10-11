@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { addDays, formatDate, todayEt } from "@/lib/dates"
+import { addDays, formatDate, sundayOnOrAfter, todayEt } from "@/lib/dates"
 import { TASK_MESSAGES } from "@/lib/schemas/tasks"
 import { admin, cleanUpE2eRows, e2eLabel } from "./support/admin"
 import { collectConsoleErrors, snap, waitForContent } from "./support/page"
@@ -24,6 +24,22 @@ async function markPage(page: Page) {
 }
 async function stillSamePage(page: Page) {
   return page.evaluate(() => (window as Window & { __e2eSamePage?: boolean }).__e2eSamePage)
+}
+
+/** What has keyboard focus: "task link", "body", or the element's id. */
+function focusTarget(page: Page) {
+  return page.evaluate(() => {
+    const active = document.activeElement
+    if (!active || active === document.body) return "body"
+    if (active.hasAttribute("data-task-title")) return "task link"
+    return active.id || active.tagName.toLowerCase()
+  })
+}
+
+/** "Due by today" on a Sunday, else "Due by Sun, Oct 18" (as the Due this week view says). */
+function weekListName(today: string) {
+  const weekEnd = sundayOnOrAfter(today)
+  return `Due by ${weekEnd === today ? "today" : formatDate(weekEnd, "medium")}`
 }
 
 async function taskStatus(title: string) {
@@ -87,10 +103,30 @@ test("a new task: inline errors first, then it lands in My tasks and moves with 
 
   // 3. Inline status: In Progress, then Done, without leaving (or reloading) the page.
   await markPage(page)
-  await row.getByLabel(`Status for ${title}`).selectOption("in_progress")
+  const toDoStatus = row.getByRole("button", { name: `Status for ${title}: To Do` })
+  if (testInfo.project.use.hasTouch) {
+    // A swipe that starts on the button scrolls the page: touching it opens nothing...
+    await toDoStatus.dispatchEvent("pointerdown", {
+      pointerType: "touch",
+      button: 0,
+      isPrimary: true,
+    })
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))))
+    await expect(page.getByRole("menu")).toHaveCount(0)
+    await expect(toDoStatus).toHaveAttribute("aria-expanded", "false")
+    // ...only a finished tap does.
+    await toDoStatus.tap()
+    await expect(page.getByRole("menu")).toBeVisible()
+  } else {
+    await toDoStatus.click()
+  }
+  await page.getByRole("menuitemradio", { name: "In Progress" }).click()
   await expect(toast(page, "Marked In Progress")).toBeVisible()
   await expect.poll(async () => (await taskStatus(title)).status).toBe("in_progress")
-  await expect(row.getByLabel(`Status for ${title}`)).toHaveValue("in_progress")
+  // Still in "Your open tasks", so focus stays on its status button.
+  const statusButton = row.getByRole("button", { name: `Status for ${title}: In Progress` })
+  await expect(statusButton).toBeVisible()
+  await expect(statusButton).toBeFocused()
 
   // The other views put it in the right place.
   const views = page.getByRole("navigation", { name: "Task views" })
@@ -114,38 +150,75 @@ test("a new task: inline errors first, then it lands in My tasks and moves with 
   await expect(page).toHaveURL("/tasks?view=week")
   await expect(
     page
-      .getByRole("list", { name: "Due by today" })
+      .getByRole("list", { name: weekListName(today) })
       .getByRole("link", { name: title, exact: true }),
   ).toBeVisible()
   await views.getByRole("link", { name: "My tasks" }).click()
   await expect(page).toHaveURL("/tasks")
   await expect(row).toBeVisible()
 
-  await row.getByRole("button", { name: `Done: ${title}` }).click()
+  // Done from the keyboard.
+  await row.getByRole("button", { name: `Done: ${title}` }).focus()
+  await page.keyboard.press("Space")
   await expect(toast(page, "Marked Done")).toBeVisible()
   await expect.poll(async () => (await taskStatus(title)).completed_at).not.toBeNull()
-  // Done moves it out of the open list into the collapsed "Done in the last 7 days".
+  // Done moves it out of the open list into the collapsed "Done in the last 7 days"; focus
+  // moves to the next open task (or the list's heading), not back to the top of the page.
   await expect(openList.getByRole("link", { name: title, exact: true })).toHaveCount(0)
+  await expect.poll(() => focusTarget(page)).toMatch(/^(task link|tasks-mine-open)$/)
+  const doneList = page.getByRole("list", { name: "Done in the last 7 days" })
+  const doneRow = doneList.getByRole("listitem").filter({ hasText: title })
   await page.getByText("Done in the last 7 days").click()
-  const doneRow = page
-    .getByRole("list", { name: "Done in the last 7 days" })
-    .getByRole("listitem")
-    .filter({ hasText: title })
   await expect(doneRow).toBeVisible()
   await expect(doneRow.getByRole("button", { name: `Done: ${title}` })).toHaveAttribute(
     "aria-pressed",
     "true",
   )
+  const { completed_at: completedAt } = await taskStatus(title)
+
+  // Reopened by mistake: Undo reverses it and keeps the original completion time.
+  await doneRow.getByRole("button", { name: `Done: ${title}` }).click()
+  const reopened = toast(page, "Marked To Do")
+  await expect(reopened).toBeVisible()
+  await expect.poll(async () => (await taskStatus(title)).completed_at).toBeNull()
+  await reopened.getByRole("button", { name: "Undo" }).click()
+  await expect(toast(page, "Back to Done")).toBeVisible()
+  await expect.poll(async () => (await taskStatus(title)).status).toBe("done")
+  expect((await taskStatus(title)).completed_at).toBe(completedAt)
+  // The list may have closed while it was empty.
+  if (!(await doneList.isVisible())) await page.getByText("Done in the last 7 days").click()
+  await expect(doneRow).toBeVisible()
   await expect(page).toHaveURL("/tasks")
   expect(await stillSamePage(page), "the page reloaded").toBe(true)
 
   // By status: in "Done in the last 14 days" now.
   await views.getByRole("link", { name: "By status" }).click()
+  await expect(page).toHaveURL("/tasks?view=status")
+  const doneSection = page.getByRole("list", { name: "Done in the last 14 days" })
+  await expect(doneSection.getByRole("link", { name: title, exact: true })).toBeVisible()
+
+  // The status menu: arrowing through it saves nothing; Escape leaves it as it was.
+  const doneStatus = doneSection.getByRole("button", { name: `Status for ${title}: Done` })
+  await doneStatus.focus()
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("menu")).toBeVisible()
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("ArrowDown")
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("menu")).toHaveCount(0)
+  await expect(doneStatus).toBeFocused()
+  expect((await taskStatus(title)).status).toBe("done")
+
+  // Picking a status moves the row to that section, and focus goes with it.
+  await doneStatus.click()
+  await page.getByRole("menuitemradio", { name: "Blocked" }).click()
+  await expect(toast(page, "Marked Blocked")).toBeVisible()
+  await expect.poll(async () => (await taskStatus(title)).status).toBe("blocked")
   await expect(
     page
-      .getByRole("list", { name: "Done in the last 14 days" })
-      .getByRole("link", { name: title, exact: true }),
-  ).toBeVisible()
+      .getByRole("list", { name: "Blocked" })
+      .getByRole("button", { name: `Status for ${title}: Blocked` }),
+  ).toBeFocused()
 
   expect(errors).toEqual([])
 })

@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Handshake,
   Target,
-  TriangleAlert,
   Users,
   type LucideIcon,
 } from "lucide-react"
@@ -28,6 +27,7 @@ import {
 } from "@/lib/labels"
 import { taskIdSchema } from "@/lib/schemas/tasks"
 import { ArchiveTaskButton, RestoreTaskButton } from "./archive-buttons"
+import { CrunchNote } from "./crunch-note"
 import { orgListHref } from "./links"
 import { orgMeetingLabel, teamMeetingLabel, withCurrent, type TaskFormOptions } from "./options"
 import { getTask, getTaskFormOptions, type TaskActor, type TaskDetail } from "./queries"
@@ -79,16 +79,13 @@ export async function TaskDetailView({ params }: { params: Promise<{ id: string 
         ) : null}
 
         <dl className="grid grid-cols-1 gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 md:grid-cols-[auto_auto_auto_1fr] md:items-end md:gap-x-8">
-          <div className="space-y-1.5">
-            <dt className="sr-only">Status</dt>
-            <dd>
-              {archived ? (
-                <Badge variant="outline">{taskStatusLabels[task.status]}</Badge>
-              ) : (
-                <TaskStatusControl taskId={task.id} title={task.title} status={task.status} />
-              )}
-            </dd>
-          </div>
+          <Meta label="Status">
+            {archived ? (
+              <Badge variant="outline">{taskStatusLabels[task.status]}</Badge>
+            ) : (
+              <TaskStatusControl taskId={task.id} title={task.title} status={task.status} />
+            )}
+          </Meta>
           <Meta label="Owner">
             <PersonChip person={task.owner} showRole />
           </Meta>
@@ -101,13 +98,7 @@ export async function TaskDetailView({ params }: { params: Promise<{ id: string 
         </dl>
 
         {crunch.map((warning) => (
-          <p
-            key={warning}
-            className="flex items-start gap-2 rounded-md border border-stale/40 bg-stale-soft px-3 py-2 text-sm text-stale"
-          >
-            <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {warning}
-          </p>
+          <CrunchNote key={warning}>{warning}</CrunchNote>
         ))}
       </header>
 

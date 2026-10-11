@@ -44,7 +44,8 @@ export async function TaskViews({
   const list = { today, crunchPeriods }
 
   return (
-    <div className="space-y-6">
+    // data-task-views: where a status change looks for the row it moved (status-focus.ts).
+    <div data-task-views className="space-y-6">
       <ViewSwitcher current={view} />
       {tasks.length === 0 ? (
         <NoTasks view={view} />
@@ -120,9 +121,14 @@ function AddTaskButton({
   )
 }
 
+/** Focusable from script: focus lands here when a status change empties the list below. */
 function SectionHeading({ id, title, count }: { id: string; title: string; count: number }) {
   return (
-    <h2 id={id} className="flex items-baseline gap-2 text-base font-semibold">
+    <h2
+      id={id}
+      tabIndex={-1}
+      className="flex items-baseline gap-2 text-base font-semibold focus-visible:outline-offset-4"
+    >
       {title}
       <span className="text-sm font-normal text-muted-foreground">{count}</span>
     </h2>
@@ -231,7 +237,11 @@ function OwnerView({
         return (
           <section key={ownerId} aria-labelledby={headingId} className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <h2 id={headingId} className="flex min-w-0 items-center gap-3">
+              <h2
+                id={headingId}
+                tabIndex={-1}
+                className="flex min-w-0 items-center gap-3 focus-visible:outline-offset-4"
+              >
                 <PersonChip person={owner} showRole />
                 <span className="shrink-0 text-sm font-normal text-muted-foreground">
                   {owned.length} open

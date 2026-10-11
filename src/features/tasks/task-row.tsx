@@ -1,5 +1,6 @@
 "use client"
 
+import { useRef } from "react"
 import Link from "next/link"
 import { ArrowUp, Building2, TriangleAlert } from "lucide-react"
 import { DueDate } from "@/components/common/due-date"
@@ -9,14 +10,14 @@ import type { IsoDate } from "@/lib/dates"
 import { cn } from "@/lib/utils"
 import { taskHref } from "./links"
 import type { TaskListItem } from "./queries"
-import { DoneToggle, TaskStatusSelect, useTaskStatus } from "./task-status"
+import { DoneToggle, TaskStatusMenu, useTaskStatus } from "./task-status"
 
 /** The owner's crunch period that the due date falls in, if any. */
 export type RowCrunch = { label: string }
 
 /**
  * One task in a list: a card on phones, a row on wider screens. The whole card
- * opens the task; the done toggle and status select sit above that link.
+ * opens the task; the done toggle and status menu sit above that link.
  * People first: the owner is always shown, except under their own heading.
  */
 export function TaskRow({
@@ -33,12 +34,15 @@ export function TaskRow({
   /** Smaller rows for the "Done recently" lists: no next action. */
   compact?: boolean
 }) {
-  const control = useTaskStatus(task.id, task.title, task.status)
+  const rowRef = useRef<HTMLLIElement>(null)
+  const control = useTaskStatus(task.id, task.title, task.status, rowRef)
   const done = control.status === "done"
 
   return (
     <li
+      ref={rowRef}
       data-slot="task-row"
+      data-task-id={task.id}
       aria-busy={control.pending || undefined}
       className={cn(
         "relative grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-3 p-3 md:grid-cols-[auto_minmax(0,1fr)_10rem] md:items-start md:gap-x-4 md:p-4",
@@ -48,7 +52,7 @@ export function TaskRow({
       <DoneToggle
         title={task.title}
         status={control.status}
-        onChange={control.change}
+        onChange={(next) => control.change(next, "done")}
         className="relative z-10 -mt-1 md:-mt-0.5"
       />
 
@@ -56,6 +60,7 @@ export function TaskRow({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Link
             href={taskHref(task.id)}
+            data-task-title
             className={cn(
               "min-w-0 font-medium break-words outline-none",
               // Stretched link: the whole card opens the task.
@@ -97,23 +102,24 @@ export function TaskRow({
             </span>
           ) : null}
           {crunch && !done ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-stale-soft px-2 py-0.5 text-xs font-medium text-stale">
-              <TriangleAlert aria-hidden className="size-3" />
+            // Neutral, not amber: amber means stale (spec §7). The icon is 14 px.
+            <Badge variant="outline" className="[&>svg]:size-3.5">
+              <TriangleAlert aria-hidden />
               <span aria-hidden>Crunch</span>
               <span className="sr-only">
                 Due in {firstNameOf(task.owner.name)}&apos;s crunch period: {crunch.label}
               </span>
-            </span>
+            </Badge>
           ) : null}
         </div>
       </div>
 
-      <TaskStatusSelect
+      <TaskStatusMenu
         title={task.title}
         status={control.status}
-        onChange={control.change}
+        onChange={(next) => control.change(next, "status")}
         pending={control.pending}
-        className="relative z-10 col-start-2 max-md:max-w-60 md:col-start-3 md:row-start-1"
+        className="relative z-10 col-start-2 w-full max-md:max-w-60 md:col-start-3 md:row-start-1"
       />
     </li>
   )

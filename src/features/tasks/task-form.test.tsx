@@ -1,10 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { CONNECTION_ERROR } from "@/lib/action-calls"
+import { createTask, updateTask } from "./actions"
 import type { TaskFormOptions } from "./options"
-import { TaskForm } from "./task-form"
+import { TaskForm, taskFormActions } from "./task-form"
+import { initialTaskFormState } from "./types"
 
 // Render the client component on its own: no router, no Server Actions.
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  unstable_rethrow: vi.fn(),
+}))
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...props}>
@@ -44,6 +50,13 @@ function selectedOption(value: string, label: string) {
 function render(props: Parameters<typeof TaskForm>[0]) {
   return renderToStaticMarkup(<TaskForm {...props} />)
 }
+
+/** The crunch warning's aria-live region, from its opening tag to its closing tag. */
+function liveRegion(html: string) {
+  return /<div id="[^"]*-crunch"[^>]*>.*?<\/div>/.exec(html)?.[0]
+}
+
+afterEach(() => vi.restoreAllMocks())
 
 describe("TaskForm", () => {
   it("labels every field and marks the required ones", () => {
@@ -113,6 +126,24 @@ describe("TaskForm", () => {
     )
     // The due date field points at the warning for screen readers.
     expect(html).toMatch(/type="date"[^>]*aria-describedby="[^"]*-crunch"/)
+    // Neutral, not amber: amber means stale (spec §7).
+    expect(liveRegion(html)).toContain("bg-muted/50")
+    expect(html).not.toMatch(/stale|amber/)
+  })
+
+  it("keeps the warning's live region in the accessibility tree while it's empty", () => {
+    const html = render({
+      mode: "create",
+      returnTo: "/tasks",
+      options,
+      defaults: { owner_id: JOHN, due_date: "2026-10-20" },
+    })
+    const region = liveRegion(html)
+    expect(region).toMatch(/aria-live="polite"/)
+    expect(region).toMatch(/><\/div>$/) // empty
+    // Not display:none (e.g. Tailwind's hidden / empty:hidden), or screen readers may miss
+    // the warning when it appears.
+    expect(region).not.toMatch(/hidden|display:\s*none/)
   })
 
   it("doesn't warn for someone else's crunch period, or outside it", () => {
@@ -159,5 +190,50 @@ describe("TaskForm", () => {
       defaults: { owner_id: SAM, due_date: "2026-12-10", status: "done" },
     })
     expect(html).not.toContain("crunch period")
+  })
+})
+
+describe("taskFormActions", () => {
+  function submitted() {
+    const formData = new FormData()
+    formData.set("title", "Email Jane the deck")
+    formData.set("owner_id", SAM)
+    formData.set("due_date", "2026-10-20")
+    return formData
+  }
+
+  it.each(["create", "edit"] as const)(
+    "%s: a failed request returns an error state that refills the form (no error screen)",
+    async (mode) => {
+      vi.spyOn(console, "error").mockImplementation(() => {})
+      const action = mode === "create" ? createTask : updateTask
+      vi.mocked(action).mockRejectedValueOnce(new TypeError("Failed to fetch"))
+
+      const state = await taskFormActions[mode](initialTaskFormState, submitted())
+
+      expect(state).toMatchObject({
+        status: "error",
+        message: CONNECTION_ERROR,
+        fieldErrors: {},
+        values: { title: "Email Jane the deck", owner_id: SAM, due_date: "2026-10-20" },
+      })
+      // Only a success moves a new task's form on.
+      expect(state.redirectTo).toBeUndefined()
+    },
+  )
+
+  it("passes the action's own result through", async () => {
+    vi.mocked(createTask).mockResolvedValueOnce({
+      status: "success",
+      id: "t1",
+      warnings: [],
+      redirectTo: "/tasks",
+    })
+    await expect(taskFormActions.create(initialTaskFormState, submitted())).resolves.toEqual({
+      status: "success",
+      id: "t1",
+      warnings: [],
+      redirectTo: "/tasks",
+    })
   })
 })

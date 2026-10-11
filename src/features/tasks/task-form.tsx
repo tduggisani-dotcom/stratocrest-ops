@@ -4,7 +4,7 @@ import { useActionState, useEffect, useId, useRef, useState, type ReactNode } fr
 import type { Route } from "next"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ChevronRight, TriangleAlert } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { FormMessage } from "@/components/forms/form-message"
 import { PersonSelect } from "@/components/forms/person-select"
@@ -18,6 +18,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
+import { withConnectionErrors } from "@/lib/action-calls"
 import { crunchPeriodsCovering, crunchWarning } from "@/lib/crunch"
 import { formatDate, isIsoDate } from "@/lib/dates"
 import {
@@ -31,6 +32,7 @@ import {
 import { TASK_LIMITS, type TaskLinkField } from "@/lib/schemas/tasks"
 import { cn } from "@/lib/utils"
 import { createTask, updateTask } from "./actions"
+import { CrunchNote } from "./crunch-note"
 import { taskHref } from "./links"
 import type { LinkOption, TaskFormOptions } from "./options"
 import { initialTaskFormState, type TaskFormState } from "./types"
@@ -53,6 +55,16 @@ type TaskFormProps = {
 )
 
 /**
+ * The form's Server Actions. A failed request (lost signal, server error) comes
+ * back as an error state with what was typed, so the form refills and says so
+ * instead of the error screen replacing it.
+ */
+export const taskFormActions = {
+  create: withConnectionErrors(createTask),
+  edit: withConnectionErrors(updateTask),
+} satisfies Record<TaskFormProps["mode"], unknown>
+
+/**
  * Add or edit a task (spec §6.4). One owner, a concrete next action and a due
  * date are required; links to an org, session, key result or meeting are
  * optional and tucked into "Link to…".
@@ -72,7 +84,7 @@ export function TaskForm(props: TaskFormProps) {
 function TaskFormBody(props: TaskFormProps & { onCreated: () => void }) {
   const { mode, options, defaults, onCreated } = props
   const [state, formAction] = useActionState<TaskFormState, FormData>(
-    mode === "create" ? createTask : updateTask,
+    taskFormActions[mode],
     initialTaskFormState,
   )
   const router = useRouter()
@@ -215,16 +227,11 @@ function TaskFormBody(props: TaskFormProps & { onCreated: () => void }) {
         />
       </div>
 
-      {/* Always rendered, so screen readers hear the warning when it appears. */}
-      <div id={`${uid}-crunch`} aria-live="polite" className="empty:hidden">
+      {/* Always rendered and never hidden, so screen readers hear the warning when it
+          appears. Empty, it takes no space: its margins collapse into its neighbours'. */}
+      <div id={`${uid}-crunch`} aria-live="polite" className="space-y-2">
         {crunchWarnings.map((warning) => (
-          <p
-            key={warning}
-            className="flex items-start gap-2 rounded-md border border-stale/40 bg-stale-soft px-3 py-2 text-sm text-stale"
-          >
-            <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-            <span>{warning} You can still save it.</span>
-          </p>
+          <CrunchNote key={warning}>{warning} You can still save it.</CrunchNote>
         ))}
       </div>
 

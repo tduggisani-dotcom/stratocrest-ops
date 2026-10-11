@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Locator } from "@playwright/test"
 import { crunchWarning } from "@/lib/crunch"
 import { addDays, formatDate, todayEt } from "@/lib/dates"
 import { admin, cleanUpE2eRows, e2eLabel } from "./support/admin"
@@ -11,7 +11,16 @@ import { getTeam } from "./support/team"
  */
 test.afterEach(cleanUpE2eRows)
 
-test("a task due in a teammate's crunch period gets an amber warning but still saves", async ({
+/** A crunch warning box: visible, neutral (not a status colour), with its warning icon. */
+async function expectNeutralWarning(box: Locator) {
+  await expect(box).toBeVisible()
+  await expect(box).toHaveClass(/\bbg-muted\/50\b/)
+  await expect(box).toHaveClass(/\btext-foreground\b/)
+  await expect(box).not.toHaveClass(/\b(?:bg|text|border)-(?:stale|overdue|good)/)
+  await expect(box.locator("svg.lucide-triangle-alert")).toBeAttached()
+}
+
+test("a task due in a teammate's crunch period gets a warning but still saves", async ({
   page,
 }, testInfo) => {
   const errors = collectConsoleErrors(page)
@@ -54,10 +63,10 @@ test("a task due in a teammate's crunch period gets an amber warning but still s
   await page.getByLabel(/^Owner/).selectOption({ label: teammate.name })
   await expect(warning).toBeVisible()
   await expect(warning).toContainText("You can still save it.")
-  // Amber (the "stale" status colour), announced politely, and tied to the date field.
+  // Neutral (amber means stale, red overdue: spec §7) with a warning icon, announced
+  // politely, and tied to the date field.
   const box = page.locator("p").filter({ hasText: warningText })
-  await expect(box).toHaveClass(/\bbg-stale-soft\b/)
-  await expect(box).toHaveClass(/\btext-stale\b/)
+  await expectNeutralWarning(box)
   await expect(box.locator("..")).toHaveAttribute("aria-live", "polite")
   const describedBy = await page.getByLabel(/^Due date/).getAttribute("aria-describedby")
   expect(describedBy?.split(" ")).toContain(await box.locator("..").getAttribute("id"))
@@ -92,7 +101,26 @@ test("a task due in a teammate's crunch period gets an amber warning but still s
   await expect(
     row.getByText(`Due in ${teammate.firstName}'s crunch period: ${period.label}`),
   ).toBeAttached()
-  await expect(row.getByText("Crunch", { exact: true })).toBeVisible()
+  const pill = row.locator('[data-slot="badge"]').filter({ hasText: "Crunch" })
+  await expect(pill).toBeVisible()
+  await expect(pill).toHaveAttribute("data-variant", "outline")
+  await expect(pill).not.toHaveClass(/\b(?:bg|text)-(?:stale|overdue|good)/)
+  await expect(pill.locator("svg.lucide-triangle-alert")).toBeAttached()
+
+  // The task's page repeats the warning under its title, and its edit form (same owner and
+  // date) warns too, both styled the same way.
+  await row.getByRole("link", { name: title, exact: true }).click()
+  await expect(page).toHaveURL(/\/tasks\/[0-9a-f-]{36}$/)
+  await waitForContent(page)
+  // (:visible: the Tasks page stays in the DOM, hidden, after a client-side navigation.)
+  const taskPage = page.locator("article:visible")
+  await expectNeutralWarning(taskPage.locator("header p").filter({ hasText: warningText }))
+  await expectNeutralWarning(
+    taskPage
+      .getByRole("region", { name: "Edit task" })
+      .locator("p")
+      .filter({ hasText: warningText }),
+  )
 
   expect(errors).toEqual([])
 })

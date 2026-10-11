@@ -11,5 +11,13 @@ export type TaskFormState = FormState & { redirectTo?: Route }
 
 export const initialTaskFormState: TaskFormState = { status: "idle" }
 
-/** Status changes, archive and restore: called from buttons, not forms. */
+/** Archive, restore and undo: called from buttons, not forms. */
 export type TaskActionResult = { status: "success" } | { status: "error"; message: string }
+
+/**
+ * An inline status change. `undoId` is the activity_log entry it wrote, which
+ * the toast's Undo reverses; null when nothing was logged (the task already had
+ * that status) or the lookup failed, and then the toast offers no Undo.
+ */
+export type TaskStatusResult =
+  { status: "success"; undoId: number | null } | { status: "error"; message: string }
