@@ -30,14 +30,25 @@ import {
 } from "./helpers"
 
 /**
- * Undo (docs/ARCHITECTURE.md §4, spec §6.11): any activity-log entry can be
- * reversed by a person. A create is archived (or deleted where there is no
- * archive), an edit has its `before` values put back, a delete is re-inserted.
- * The undo is itself logged (action 'undo', undo_of = the reversed entry) and
- * runs with the caller's own rights.
+ * Undo (docs/ARCHITECTURE.md §4, spec §6.11): any change can be reversed by a
+ * person. A change is everything one statement did (e.g. the bot logging a
+ * meeting plus the debrief its trigger created). A create is archived (or
+ * deleted where there is no archive), an edit has its `before` values put back,
+ * a delete is re-inserted. Undo refuses when a record changed since (unless
+ * forced), never cascades, is itself logged (action 'undo', undo_of = the
+ * reversed entry) and runs with the caller's own rights.
  */
 
 afterAll(closeDb)
+
+async function count(db: Db, table: string, column: string, id: string): Promise<number> {
+  const row = await one<{ n: number }>(
+    db,
+    `select count(*)::int as n from public.${table} where ${column} = $1`,
+    [id],
+  )
+  return row?.n ?? 0
+}
 
 const SerializationFailure = "40001"
 const FeatureNotSupported = "0A000"
@@ -117,7 +128,36 @@ describe("undoing a create", () => {
     })
   })
 
-  test("a teammate can undo the bot logging an org meeting", async () => {
+  test("a teammate can undo the bot logging a meeting: the meeting and its debrief go together", async () => {
+    await withTx(async (db) => {
+      const me = await createTeammate(db)
+      const org = await createOrg(db, { owner_id: me.id })
+      const bot = await createBot(db)
+      await actAsService(db, bot)
+      const meeting = await createOrgMeeting(db, {
+        organization_id: org.id,
+        starts_at: sql("now() - interval '1 hour'"),
+      })
+      const logged = (await logFor(db, meeting.id)).find((l) => l.action === "insert")!
+      expect(await count(db, "debriefs", "org_meeting_id", meeting.id)).toBe(1)
+
+      await actAs(db, me.authUserId)
+      await undo(db, logged.id)
+
+      expect(await count(db, "org_meetings", "id", meeting.id)).toBe(0)
+      expect(await count(db, "debriefs", "org_meeting_id", meeting.id)).toBe(0)
+      const contact = await one<{ last_contact_date: string | null }>(
+        db,
+        "select last_contact_date from public.org_overview where id = $1",
+        [org.id],
+      )
+      expect(contact?.last_contact_date).toBeNull()
+    })
+  })
+})
+
+describe("undo never removes more than the change", () => {
+  test("undoing a create is refused when the record changed since; force allows it", async () => {
     await withTx(async (db) => {
       const me = await createTeammate(db)
       const org = await createOrg(db, { owner_id: me.id })
@@ -130,15 +170,108 @@ describe("undoing a create", () => {
       const logged = await lastLogFor(db, meeting.id)
 
       await actAs(db, me.authUserId)
-      await undo(db, logged.id)
+      await update(db, "org_meetings", meeting.id, { notes: "Agenda: pilot scope" })
+      const error = await sqlError(db, () => undo(db, logged.id))
+      expect(error.code).toBe(SqlState.serializationFailure)
+      expect(await count(db, "org_meetings", "id", meeting.id)).toBe(1)
 
-      // Gone, or archived if org_meetings gains an archived_at column.
-      const left = await rows<{ archived: boolean }>(
-        db,
-        "select (to_jsonb(m) ->> 'archived_at') is not null as archived from public.org_meetings m where id = $1",
-        [meeting.id],
+      await undo(db, logged.id, true)
+      expect(await count(db, "org_meetings", "id", meeting.id)).toBe(0)
+    })
+  })
+
+  test("never cascades: a record others point at is not removed, even with force", async () => {
+    await withTx(async (db) => {
+      const me = await createTeammate(db)
+      const teammate = await createPerson(db)
+      // A Sunday meeting the scheduled job created, with a teammate's written update.
+      const meeting = await insert(db, "team_meetings", {
+        meeting_date: sql(
+          "app.today_et() + (7 - extract(isodow from app.today_et())::int) % 7 + 70",
+        ),
+        facilitator_id: me.id,
+      })
+      const created = await lastLogFor(db, meeting.id)
+      await insert(db, "meeting_updates", {
+        team_meeting_id: meeting.id,
+        person_id: teammate.id,
+        doing_this_week: "Customer calls",
+      })
+
+      await actAs(db, me.authUserId)
+      for (const force of [false, true]) {
+        const error = await sqlError(db, () => undo(db, created.id, force))
+        expect(error.code, `force=${force}`).toBe(SqlState.foreignKeyViolation)
+        expect(error.message).toMatch(/meeting_updates/)
+      }
+      expect(await count(db, "team_meetings", "id", meeting.id)).toBe(1)
+      expect(await count(db, "meeting_updates", "team_meeting_id", meeting.id)).toBe(1)
+    })
+  })
+
+  test("separate statements are separate changes", async () => {
+    await withTx(async (db) => {
+      const me = await createTeammate(db)
+      await actAs(db, me.authUserId)
+      const first = await createTask(db, { owner_id: me.id })
+      const second = await createTask(db, { owner_id: me.id })
+
+      await undo(db, (await lastLogFor(db, first.id)).id)
+      expect((await find(db, "tasks", first.id))?.archived_at).not.toBeNull()
+      expect((await find(db, "tasks", second.id))?.archived_at).toBeNull()
+    })
+  })
+
+  test("undo puts back who ticked a checklist item, and when", async () => {
+    await withTx(async (db) => {
+      const brad = await createTeammate(db)
+      const john = await createTeammate(db)
+      const org = await createOrg(db, { owner_id: brad.id })
+      const checklist = await insert(db, "checklists", { title: "Prep", organization_id: org.id })
+      await actAs(db, brad.authUserId)
+      const item = await insert(db, "checklist_items", {
+        checklist_id: checklist.id,
+        text: "Send the deck",
+        done_at: sql("now()"),
+      })
+      await resetRole(db)
+      await withoutTriggers(db, () =>
+        db.query(
+          "update public.checklist_items set done_at = now() - interval '3 days' where id = $1",
+          [item.id],
+        ),
       )
-      expect(left.every((r) => r.archived)).toBe(true)
+      const ticked = await find(db, "checklist_items", item.id)
+
+      await actAs(db, john.authUserId)
+      await db.query("delete from public.checklist_items where id = $1", [item.id])
+      await undo(db, (await lastLogFor(db, item.id)).id)
+
+      const back = await find(db, "checklist_items", item.id)
+      expect(back?.done_by).toBe(brad.id)
+      expect(back?.done_at).toEqual(ticked?.done_at)
+    })
+  })
+
+  test("undoing a reopen puts back the task's original completion time", async () => {
+    await withTx(async (db) => {
+      const me = await createTeammate(db)
+      await actAs(db, me.authUserId)
+      const task = await createTask(db, { owner_id: me.id, status: "done" })
+      await resetRole(db)
+      await withoutTriggers(db, () =>
+        db.query("update public.tasks set completed_at = now() - interval '4 days' where id = $1", [
+          task.id,
+        ]),
+      )
+      const done = await find(db, "tasks", task.id)
+
+      await actAs(db, me.authUserId)
+      await update(db, "tasks", task.id, { status: "to_do" })
+      await undo(db, (await lastLogFor(db, task.id)).id)
+      const back = await find(db, "tasks", task.id)
+      expect(back?.status).toBe("done")
+      expect(back?.completed_at).toEqual(done?.completed_at)
     })
   })
 })
@@ -501,11 +634,19 @@ describe("who can undo", () => {
       const emailError = await sqlError(db, () => undo(db, emailChange.id))
       expect(emailError.code).toBe(SqlState.insufficientPrivilege)
       expect(emailError.message).toMatch(/permission denied/)
-      // People are never deleted by undo (deactivate them instead).
-      const createError = await sqlError(db, () => undo(db, created.id))
+      // Undoing the create of an edited person is refused as "changed since"…
+      const changedError = await sqlError(db, () => undo(db, created.id))
+      expect(changedError.code).toBe(SqlState.serializationFailure)
+      expect((await find(db, "people", person.id))?.email).toBe(email)
+      // …and even an untouched person is never deleted by undo (deactivate them instead).
+      await resetRole(db)
+      const untouched = await createPerson(db)
+      const untouchedCreated = await lastLogFor(db, untouched.id)
+      await actAs(db, me.authUserId)
+      const createError = await sqlError(db, () => undo(db, untouchedCreated.id))
       expect(createError.code).toBe("0A000")
       expect(createError.message).toMatch(/cannot be removed by undo/)
-      expect((await find(db, "people", person.id))?.email).toBe(email)
+      expect(await find(db, "people", untouched.id)).toBeTruthy()
     })
   })
 })

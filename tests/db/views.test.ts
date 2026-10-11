@@ -161,6 +161,25 @@ describe("org_overview", () => {
       }
     })
   })
+  test("a meeting moved into the future stops hiding a stale org", async () => {
+    await withTx(async (db) => {
+      const owner = await createPerson(db)
+      const org = await createOrg(db, {
+        owner_id: owner.id,
+        last_contact_date: sql("app.today_et() - 20"),
+      })
+      const meeting = await createOrgMeeting(db, {
+        organization_id: org.id,
+        starts_at: sql("now() - interval '1 hour'"),
+      })
+      expect((await overview(db, org.id)).is_stale).toBe(false)
+
+      await update(db, "org_meetings", meeting.id, { starts_at: sql("now() + interval '5 days'") })
+      const row = await overview(db, org.id)
+      expect(row.is_stale).toBe(true)
+      expect(row.days_since_contact).toBe(20)
+    })
+  })
 })
 
 describe("person_workload", () => {
@@ -416,6 +435,45 @@ describe("wins_feed", () => {
       expect(orgWins).toHaveLength(1)
       expect(taskWins[0].id).toBeLessThan(reopen.id)
       expect(orgWins[0].id).toBeLessThan(moveBack.id)
+    })
+  })
+  test("an undone win disappears, and comes back when the undo is undone", async () => {
+    await withTx(async (db) => {
+      const me = await createTeammate(db)
+      await actAs(db, me.authUserId)
+      const task = await createTask(db, { owner_id: me.id })
+      const org = await createOrg(db, { owner_id: me.id })
+      await update(db, "tasks", task.id, { status: "done" })
+      await update(db, "organizations", org.id, { stage: "committed" })
+      const done = await lastLogFor(db, task.id)
+      const committed = await lastLogFor(db, org.id)
+
+      await undo(db, done.id)
+      await undo(db, committed.id)
+      expect(await winsFor(db, task.id)).toEqual([])
+      expect(await winsFor(db, org.id)).toEqual([])
+
+      // Redo: undo the undo of the task.
+      await undo(db, (await lastLogFor(db, task.id)).id)
+      expect(await winsFor(db, task.id)).toHaveLength(1)
+    })
+  })
+
+  test("reaching the won stage is a win even from a lost stage", async () => {
+    await withTx(async (db) => {
+      const me = await createTeammate(db)
+      await actAs(db, me.authUserId)
+      const investor = await createOrg(db, { owner_id: me.id, kind: "investor", stage: "passed" })
+      const customer = await createOrg(db, { owner_id: me.id, kind: "customer", stage: "lost" })
+      await update(db, "organizations", investor.id, { stage: "committed" })
+      await update(db, "organizations", customer.id, { stage: "converted" })
+      expect(await winsFor(db, investor.id)).toHaveLength(1)
+      expect(await winsFor(db, customer.id)).toHaveLength(1)
+
+      // Reopening a lost one (Passed -> Contacted) is not a win.
+      const reopened = await createOrg(db, { owner_id: me.id, kind: "investor", stage: "passed" })
+      await update(db, "organizations", reopened.id, { stage: "contacted" })
+      expect(await winsFor(db, reopened.id)).toEqual([])
     })
   })
 })

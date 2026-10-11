@@ -108,6 +108,8 @@ export type Database = {
           entity_type: string
           id: number
           occurred_at: string
+          statement_at: string
+          transaction_id: number
           undo_of: number | null
         }
         ComputedFields: never
@@ -122,6 +124,8 @@ export type Database = {
           entity_type: string
           id?: never
           occurred_at?: string
+          statement_at?: string
+          transaction_id?: number
           undo_of?: number | null
         }
         Update: {
@@ -135,6 +139,8 @@ export type Database = {
           entity_type?: string
           id?: never
           occurred_at?: string
+          statement_at?: string
+          transaction_id?: number
           undo_of?: number | null
         }
         Relationships: [
@@ -2368,6 +2374,7 @@ export type Database = {
           latest_rating: number | null
           latest_summary: string | null
           link: string | null
+          manual_last_contact_date: string | null
           name: string | null
           next_meeting_at: string | null
           next_meeting_id: string | null

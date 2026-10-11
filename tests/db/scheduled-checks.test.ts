@@ -346,9 +346,16 @@ describe("automatic debriefs", () => {
       expect(await debriefs(db, "org_meeting_id", ahead.id)).toEqual([
         { kind: "customer", due_date: twoDaysAgo, facilitator_id: owner.id, status: "due" },
       ])
-      expect((await find(db, "organizations", org.id))?.last_contact_date).toBe(twoDaysAgo)
-      // Never moved backwards.
-      expect((await find(db, "organizations", recent.id))?.last_contact_date).toBe(today)
+      const contact = await rows<{ id: string; last_contact_date: string | null }>(
+        db,
+        "select id, last_contact_date from public.org_overview where id = any($1::uuid[])",
+        [[org.id, recent.id]],
+      )
+      expect(contact.find((c) => c.id === org.id)?.last_contact_date).toBe(twoDaysAgo)
+      // The later of the two wins: hand-entered contact today beats a meeting two days ago.
+      expect(contact.find((c) => c.id === recent.id)?.last_contact_date).toBe(today)
+      // Nothing is copied into the hand-entered column.
+      expect((await find(db, "organizations", org.id))?.last_contact_date).toBeNull()
     })
   })
 })

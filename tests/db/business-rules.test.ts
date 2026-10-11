@@ -14,6 +14,7 @@ import {
   dayFromToday,
   find,
   insert,
+  one,
   quarterId,
   rows,
   sameMoment,
@@ -43,6 +44,15 @@ async function debriefsFor(db: Db, orgMeetingId: string) {
     db,
     "select kind, due_date, facilitator_id, status from public.debriefs where org_meeting_id = $1",
     [orgMeetingId],
+  )
+}
+
+/** Last contact as the app sees it: meetings that happened plus contact entered by hand. */
+async function contactOf(db: Db, orgId: string) {
+  return one<{ last_contact_date: string | null; manual_last_contact_date: string | null }>(
+    db,
+    "select last_contact_date, manual_last_contact_date from public.org_overview where id = $1",
+    [orgId],
   )
 }
 
@@ -238,7 +248,7 @@ describe("organizations", () => {
 })
 
 describe("org meetings", () => {
-  test("a past meeting sets last contact to its ET day and creates the debrief", async () => {
+  test("a past meeting counts as contact on its ET day and creates the debrief", async () => {
     await withTx(async (db) => {
       const me = await createTeammate(db)
       const owner = await createPerson(db)
@@ -250,9 +260,12 @@ describe("org meetings", () => {
           organization_id: org.id,
           starts_at: "2025-07-04T02:30:00Z",
         })
-        expect((await find(db, "organizations", org.id))?.last_contact_date, kind).toBe(
-          "2025-07-03",
-        )
+        expect(await contactOf(db, org.id), kind).toEqual({
+          last_contact_date: "2025-07-03",
+          manual_last_contact_date: null,
+        })
+        // Derived, not copied: the stored column only holds contact entered by hand.
+        expect((await find(db, "organizations", org.id))?.last_contact_date, kind).toBeNull()
         expect(await debriefsFor(db, meeting.id), kind).toEqual([
           { kind, due_date: "2025-07-03", facilitator_id: owner.id, status: "due" },
         ])
@@ -260,7 +273,7 @@ describe("org meetings", () => {
     })
   })
 
-  test("last contact only moves forward", async () => {
+  test("last contact is the later of contact entered by hand and the latest meeting", async () => {
     await withTx(async (db) => {
       const owner = await createPerson(db)
       const today = await dayFromToday(db, 0)
@@ -269,23 +282,25 @@ describe("org meetings", () => {
         organization_id: org.id,
         starts_at: sql("app.et_moment(app.today_et() - 3, '10:00')"),
       })
-      expect((await find(db, "organizations", org.id))?.last_contact_date).toBe(today)
-
-      const older = await createOrg(db, {
-        owner_id: owner.id,
-        last_contact_date: await dayFromToday(db, -10),
+      expect(await contactOf(db, org.id)).toEqual({
+        last_contact_date: today,
+        manual_last_contact_date: today,
       })
+
+      const tenDaysAgo = await dayFromToday(db, -10)
+      const older = await createOrg(db, { owner_id: owner.id, last_contact_date: tenDaysAgo })
       await createOrgMeeting(db, {
         organization_id: older.id,
         starts_at: sql("app.et_moment(app.today_et() - 2, '10:00')"),
       })
-      expect((await find(db, "organizations", older.id))?.last_contact_date).toBe(
-        await dayFromToday(db, -2),
-      )
+      expect(await contactOf(db, older.id)).toEqual({
+        last_contact_date: await dayFromToday(db, -2),
+        manual_last_contact_date: tenDaysAgo,
+      })
     })
   })
 
-  test("a future meeting doesn't count as contact and has no debrief until it moves into the past", async () => {
+  test("a future meeting isn't contact and has no debrief until it happens", async () => {
     await withTx(async (db) => {
       const owner = await createPerson(db)
       const org = await createOrg(db, { owner_id: owner.id, kind: "customer" })
@@ -293,14 +308,14 @@ describe("org meetings", () => {
         organization_id: org.id,
         starts_at: sql("now() + interval '3 days'"),
       })
-      expect((await find(db, "organizations", org.id))?.last_contact_date).toBeNull()
+      expect((await contactOf(db, org.id))?.last_contact_date).toBeNull()
       expect(await debriefsFor(db, meeting.id)).toEqual([])
 
       await update(db, "org_meetings", meeting.id, {
         starts_at: sql("app.et_moment(app.today_et() - 1, '15:00')"),
       })
       const yesterday = await dayFromToday(db, -1)
-      expect((await find(db, "organizations", org.id))?.last_contact_date).toBe(yesterday)
+      expect((await contactOf(db, org.id))?.last_contact_date).toBe(yesterday)
       expect(await debriefsFor(db, meeting.id)).toEqual([
         { kind: "customer", due_date: yesterday, facilitator_id: owner.id, status: "due" },
       ])
@@ -310,6 +325,67 @@ describe("org meetings", () => {
         starts_at: sql("app.et_moment(app.today_et() - 1, '16:00')"),
       })
       expect(await debriefsFor(db, meeting.id)).toHaveLength(1)
+    })
+  })
+
+  test("a meeting logged on the wrong day and moved into the future stops counting", async () => {
+    await withTx(async (db) => {
+      const owner = await createPerson(db)
+      const org = await createOrg(db, {
+        owner_id: owner.id,
+        last_contact_date: await dayFromToday(db, -20),
+      })
+      const meeting = await createOrgMeeting(db, {
+        organization_id: org.id,
+        starts_at: sql("now() - interval '1 hour'"),
+      })
+      expect(await debriefsFor(db, meeting.id)).toHaveLength(1)
+
+      // Corrected to next week: contact falls back to the hand-entered date, and the
+      // untouched debrief goes away until the meeting really happens.
+      await update(db, "org_meetings", meeting.id, { starts_at: sql("now() + interval '5 days'") })
+      expect((await contactOf(db, org.id))?.last_contact_date).toBe(await dayFromToday(db, -20))
+      expect(await debriefsFor(db, meeting.id)).toEqual([])
+    })
+  })
+
+  test("an untouched debrief follows its meeting to another day; a started one stays", async () => {
+    await withTx(async (db) => {
+      const owner = await createPerson(db)
+      const org = await createOrg(db, { owner_id: owner.id })
+      const meeting = await createOrgMeeting(db, {
+        organization_id: org.id,
+        starts_at: sql("app.et_moment(app.today_et() - 1, '10:00')"),
+      })
+      await update(db, "org_meetings", meeting.id, {
+        starts_at: sql("app.et_moment(app.today_et() - 3, '10:00')"),
+      })
+      expect((await debriefsFor(db, meeting.id))[0]?.due_date).toBe(await dayFromToday(db, -3))
+
+      // Someone starts the debrief; moving the meeting into the future no longer removes it.
+      await db.query(
+        "update public.debriefs set planned = 'Walk through the pilot' where org_meeting_id = $1",
+        [meeting.id],
+      )
+      await update(db, "org_meetings", meeting.id, { starts_at: sql("now() + interval '2 days'") })
+      expect(await debriefsFor(db, meeting.id)).toHaveLength(1)
+    })
+  })
+
+  test("moving a meeting to an org of the other kind moves its debrief too", async () => {
+    await withTx(async (db) => {
+      const first = await createPerson(db)
+      const second = await createPerson(db)
+      const investor = await createOrg(db, { owner_id: first.id, kind: "investor" })
+      const customer = await createOrg(db, { owner_id: second.id, kind: "customer" })
+      const meeting = await createOrgMeeting(db, {
+        organization_id: investor.id,
+        starts_at: sql("now() - interval '1 day'"),
+      })
+      await update(db, "org_meetings", meeting.id, { organization_id: customer.id })
+      expect(await debriefsFor(db, meeting.id)).toEqual([
+        expect.objectContaining({ kind: "customer", facilitator_id: second.id }),
+      ])
     })
   })
 
