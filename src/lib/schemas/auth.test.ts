@@ -39,8 +39,17 @@ describe("safeNextPath", () => {
     ["tab that browsers strip", "/\t/evil.example"],
     ["newline", "/tasks\nSet-Cookie: x=1"],
     ["too long", `/${"a".repeat(2048)}`],
+    ["dot segment that resolves to //", "/.//evil.example"],
+    ["dot-dot segment that resolves to //", "/..//evil.example"],
+    ["encoded dot segment", "/%2e//evil.example"],
+    ["encoded dot-dot segment", "/%2E%2E//evil.example/x"],
+    ["backslash after a dot segment", "/./\\evil.example"],
   ])("replaces a %s value with /", (_label, value) => {
     expect(safeNextPath(value)).toBe("/")
+  })
+
+  it("returns the resolved path, as a browser would read it", () => {
+    expect(safeNextPath("/people/./../tasks?view=mine")).toBe("/tasks?view=mine")
   })
 
   it.each([undefined, null, 42, ["/tasks"], { path: "/tasks" }])(

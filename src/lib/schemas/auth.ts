@@ -11,22 +11,31 @@ export const DEFAULT_NEXT_PATH: Route = "/"
 
 const MAX_NEXT_LENGTH = 2048
 const CONTROL_CHARS = /\p{Cc}/u
+const PATH_BASE = "http://next.invalid"
 
 /**
  * A same-site path to go to after signing in, or "/".
  * Only relative paths like "/tasks?view=mine" pass. Anything a browser could
- * read as another site ("//evil.com", "/\evil.com", "https://…") is replaced.
- * Control characters are refused too: browsers drop tabs and newlines inside
- * URLs, so "/\t/evil.com" would turn into "//evil.com".
- * Typed as a Route so redirect() accepts it (it may still be a 404 path).
+ * read as another site is replaced: "//evil.com", "/\evil.com", "https://…",
+ * and dot-segment tricks like "/.//evil.com" or "/%2e//evil.com" (the path is
+ * resolved the way a browser would, then checked). Control characters are
+ * refused too: browsers drop tabs and newlines inside URLs, so "/\t/evil.com"
+ * would turn into "//evil.com".
+ * Returns the resolved path. Typed as a Route so redirect() accepts it (it may
+ * still be a 404 path).
  */
 export function safeNextPath(value: unknown): Route {
   if (typeof value !== "string" || value.length > MAX_NEXT_LENGTH) return DEFAULT_NEXT_PATH
-  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+  if (!value.startsWith("/") || CONTROL_CHARS.test(value)) return DEFAULT_NEXT_PATH
+
+  let url: URL
+  try {
+    url = new URL(value, PATH_BASE)
+  } catch {
     return DEFAULT_NEXT_PATH
   }
-  if (CONTROL_CHARS.test(value)) return DEFAULT_NEXT_PATH
-  return value as Route
+  if (url.origin !== PATH_BASE || url.pathname.startsWith("//")) return DEFAULT_NEXT_PATH
+  return `${url.pathname}${url.search}${url.hash}` as Route
 }
 
 /**
