@@ -163,9 +163,18 @@ Grok → /api/v1 (key, scope, rate limit, Zod) → Supabase with the server key 
 
 - Business rules that must hold no matter who writes live in Postgres triggers. See the list in
   `docs/DATA_MODEL.md` §5.
-- **Undo:** each activity-log entry can be reversed by a person. An insert is archived, an update has
-  its `before` values restored, and an archive is restored. The undo is logged with `undo_of`. If the
-  record has changed since, the app shows what changed and asks before overwriting.
+- **Undo** reverses a whole *change*: everything one statement (one API request) did, triggers
+  included. For example, the bot logging a meeting also creates its debrief, and undo removes both.
+  - A created record is archived, or removed when its table has no archive. An edit has its `before`
+    values restored, and a removed record is re-inserted with its original creator and completion
+    stamps.
+  - Scheduled jobs are undone one entry at a time.
+  - Undo refuses when a record has changed since; the app shows what changed and offers "undo
+    anyway" (`p_force`).
+  - Undo never cascades: a record that others point at isn't removed, even when forced.
+  - Every undo is logged with `undo_of`, and runs with the person's own rights.
+  - The only exception is the narrow helper that removes records undo created, which re-checks team
+    membership and never touches people.
 - **Steps that must happen together** run as single Postgres functions, for example "create an
   objective with its 2–4 key results" and "convert an action item into a task".
 

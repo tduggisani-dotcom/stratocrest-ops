@@ -107,7 +107,8 @@ organizations ( +common,
   city text null, state_or_country text null, region org_region null,
   first_contact_date date null, first_contact_method contact_method null,
   introduced_by text null, check_size_or_focus text null,
-  last_contact_date date null,         -- moved forward automatically by logged meetings; also editable
+  last_contact_date date null,         -- contact OUTSIDE meetings, entered by hand (e.g. an email);
+                                       -- org_overview.last_contact_date also counts meetings that happened
   notes text null,
   key_result_id uuid null → key_results,
   related_organization_id uuid null → organizations,          -- same company tracked as the other kind
@@ -284,7 +285,9 @@ activity_log (                         -- append-only; written only by triggers
   action text not null,                -- insert | update | archive | restore | delete | undo
   entity_type text not null, entity_id uuid not null,      -- entity_type = table name
   before jsonb null, after jsonb null, changed_fields text[] null,
-  undo_of bigint null → activity_log)  -- set on the entry that reverses another
+  undo_of bigint null → activity_log,  -- set on the entry that reverses another
+  transaction_id bigint, statement_at timestamptz)  -- together: one change (one statement/API request,
+                                       -- triggers included); undo reverses a whole change
 
 feedback (id, created_at, person_id → people, page_path text not null, message text not null,
           status text not null default 'new' check (status in ('new', 'seen', 'done')))
@@ -361,11 +364,12 @@ integration_runs (id bigint identity pk, job text not null,   -- sheets_mirror |
 | Name | What it is |
 |---|---|
 | `org_overview` view | Each org plus owner name and avatar, **latest past meeting** (date, rating, summary), **next upcoming meeting**, days since contact, `is_stale`, `follow_up_overdue`, and stage label and position. It powers the tracker table, the cards, the Kanban, CSV export, and `/summary/investors`. |
-| Stale | Stage outcome is `open` and at least 14 days since `coalesce(last_contact_date, created_at::date)` (ET). |
+| Last contact | The later of the latest meeting that has happened and `organizations.last_contact_date` (contact entered by hand). Derived, never stored, so moving or undoing a meeting can't leave it wrong. |
+| Stale | Stage outcome is `open` and at least 14 days since last contact (or since the org was added, if never contacted), in ET. |
 | Follow-up overdue | Stage outcome is `open` and `next_step_date < today`. An org's **follow-up** is its next step; the owner is the org owner. |
 | Debrief "due" | `status = 'due' and due_date <= today`. Future ones show as "Upcoming". |
 | `person_workload` view | Per active person: open tasks, overdue tasks, overdue follow-ups, meetings in the next 7 days, and debriefs due. A person is flagged when their total is ≥ 1.5× the team average **and** at least 3 above it. |
-| `wins_feed` view | Activity-log entries for tasks moved to done, stage advances (higher position, outcome not `lost`), and meetings rated 4 or higher. |
+| `wins_feed` view | Activity-log entries for tasks moved to done, stage advances (forward among open stages, or into the won stage from anywhere), and meetings rated 4 or higher. Wins that were undone are hidden. |
 | Agenda | Non-empty `meeting_updates.decision_needed` for the upcoming meeting. |
 | Current quarter | The quarter whose dates include today. Before Q1 starts (before 2026-10-14) it is Q1. |
 
@@ -376,7 +380,7 @@ Triggers:
 1. **Common columns:** sets `updated_at`, `created_by` and `updated_by` from the current actor.
 2. **Audit:** after insert, update or delete on every business table, writes to `activity_log` (before, after, and changed fields). No-op updates are skipped.
 3. **Tasks:** fills or clears `completed_at`.
-4. **Org meetings:** move the org's `last_contact_date` forward when the meeting has happened, queue `org_meeting.logged`, and create the debrief (status `due`, due that day, facilitated by the org owner) once the meeting time has passed.
+4. **Org meetings:** queue `org_meeting.logged`, and create the debrief (status `due`, due that day, facilitated by the org owner) once the meeting time has passed. A debrief nobody has started follows its meeting: it is removed if the meeting moves into the future, re-dated if it moves to another day, and handed to the new owner if it moves to another org.
 5. **Organizations:** queue `org.created` on insert and `org.stage_changed` (from → to) when the stage changes. An org's `kind` can't change after it is created.
 6. **Help requests:** queue `help_request.created`.
 7. **Hypotheses:** copy `audience` from the linked org.
@@ -392,7 +396,6 @@ Scheduled jobs (Supabase **pg_cron**, see `docs/ARCHITECTURE.md` §5):
   - Make sure next Sunday's meeting exists. The facilitator is the next active person by `sort_order` after the last meeting's facilitator.
   - Create due debriefs for Synthe6 sessions (not breaks) the day after they end, and for org meetings and Sunday meetings that have taken place.
   - Mark past Sunday meetings as `held`.
-  - Move `last_contact_date` forward for meetings logged ahead of time that have now happened.
   - Queue `debrief.due` and `task.overdue`, once per item (tracked in `event_dedupe`).
 
   Synthe6 and Sunday-meeting debriefs only count from `app_settings.automation_start_date` (set by
@@ -420,7 +423,9 @@ Scheduled jobs (Supabase **pg_cron**, see `docs/ARCHITECTURE.md` §5):
 
 Table privileges start from nothing (Supabase's defaults, which include `TRUNCATE`, are revoked) and
 only what each row in this table needs is granted. `public.undo_activity()` runs with the caller's
-rights, so undo can't do anything the person couldn't do by hand.
+rights. The one exception is removing a record an undone change created on a table teammates can't
+delete from (e.g. a meeting the bot logged): a narrow helper does that after re-checking team
+membership. It refuses while other records point at it, and never deletes people.
 
 ## 7. Seed data (production-safe; spec §7)
 

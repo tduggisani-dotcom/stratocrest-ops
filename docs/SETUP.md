@@ -56,12 +56,15 @@ differently, look for the closest match, or ask me.
 2. Click **Generate new token**, name it `stratocrest-ops-github`, and click **Generate**.
 3. Copy it right away (it's shown once) and save it as *"Supabase access token (GitHub)"*.
 
-### A3. GitHub repository secrets (for automatic checks and database updates)
+### A3. GitHub environment secrets (for database updates)
+
+The secrets live in GitHub **environments**, not as repository secrets: a repository secret can be
+read by a workflow on any branch, while an environment's secrets can be locked to specific branches.
 
 1. Open https://github.com/tduggisani-dotcom/stratocrest-ops → **Settings** (top bar) → in the left
-   menu **Secrets and variables** → **Actions**.
-2. For each row below, click **New repository secret**, type the **Name** exactly, paste the value,
-   and click **Add secret**:
+   menu **Environments** → **New environment** → name it exactly `dev` → **Configure environment**.
+2. Under **Environment secrets**, click **Add environment secret** for each row below, type the
+   **Name** exactly, paste the value, and click **Add secret**:
 
    | Name | Value |
    |---|---|
@@ -71,8 +74,8 @@ differently, look for the closest match, or ask me.
 
    These let the **"Database: apply migrations"** GitHub workflow update your dev project when you run
    it (GitHub → **Actions** → **Database: apply migrations** → **Run workflow** → choose `dev`). The
-   `PROD_…` versions come in Stage 7. The automatic checks on every push don't need any secrets: they
-   use a temporary local Supabase.
+   production environment comes in Stage 7 (D2). The automatic checks on every push don't need any
+   secrets: they use a temporary local Supabase.
 
 ### A4. (Optional) Let Claude's cloud sessions reach the dev project
 
@@ -212,10 +215,18 @@ the bot's API key yourself in the app's **Settings → API keys** in Stage 6.
 6. **Settings** → **Functions** → **Region:** Washington, D.C., USA (`iad1`). This should be the
    default.
 
-### D2. Production values in GitHub
+### D2. Production values in GitHub (locked to `main`)
 
-Add `PROD_SUPABASE_PROJECT_REF` and `PROD_SUPABASE_DB_PASSWORD` as repository secrets (same steps
-as A3). Database changes are then applied to production automatically when we merge to `main`.
+1. GitHub → **Settings** → **Environments** → **New environment** → name it exactly `production` →
+   **Configure environment**.
+2. Under **Deployment branches and tags**, choose **Selected branches and tags** → **Add deployment
+   branch or tag rule** → type `main` → **Add rule**. Now only code that has been merged to `main`
+   can reach these secrets. (Optional: tick **Required reviewers** and add John or Ian, so every
+   production database change waits for a click.)
+3. Under **Environment secrets**, add `SUPABASE_ACCESS_TOKEN` (the token from A2),
+   `PROD_SUPABASE_PROJECT_REF` and `PROD_SUPABASE_DB_PASSWORD`, the same way as A3.
+
+Database changes are then applied to production automatically when we merge to `main`.
 
 ---
 

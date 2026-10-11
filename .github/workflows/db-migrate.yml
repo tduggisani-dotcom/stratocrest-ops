@@ -5,8 +5,9 @@
 #   → under "Use workflow from" choose your branch, under "Which Supabase project" choose dev →
 #   Run workflow. (You can choose prod there too, but only from main.)
 #
-# It needs the repository secrets from docs/SETUP.md (A3 for dev, D2 for prod). Until they are
-# added, a run skips itself and says so on its Summary page, instead of failing.
+# It needs the environment secrets from docs/SETUP.md (A3: the "dev" environment; D2: the
+# "production" environment, whose secrets GitHub only releases to main). Until they are added, a
+# run skips itself and says so on its Summary page, instead of failing.
 #
 # Only migrations the project doesn't have yet are applied, so running it twice is harmless.
 
