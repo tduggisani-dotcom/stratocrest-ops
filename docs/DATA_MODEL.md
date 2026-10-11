@@ -393,7 +393,7 @@ Every text column also has a length limit (CHECK), so a bot can't store a megaby
 Scheduled jobs (Supabase **pg_cron**, see `docs/ARCHITECTURE.md` §5):
 
 - **Every 15 min, `app.run_scheduled_checks()`:**
-  - Make sure next Sunday's meeting exists. The facilitator is the next active person by `sort_order` after the last meeting's facilitator.
+  - Make sure next Sunday's meeting exists. The facilitator is the next active person by `sort_order` after the last meeting's facilitator. On a Sunday, the next meeting is today's until noon ET or until it is held or canceled, whichever comes first; the checks look again after marking meetings held, so next week's exists in the same run.
   - Create due debriefs for Synthe6 sessions (not breaks) the day after they end, and for org meetings and Sunday meetings that have taken place.
   - Mark past Sunday meetings as `held`.
   - Queue `debrief.due` and `task.overdue`, once per item (tracked in `event_dedupe`).

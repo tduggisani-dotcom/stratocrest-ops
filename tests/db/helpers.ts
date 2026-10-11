@@ -4,6 +4,7 @@ import {
   Pool,
   TypeOverrides,
   escapeIdentifier,
+  escapeLiteral,
   types,
   type PoolClient,
   type QueryResultRow,
@@ -492,6 +493,22 @@ export async function withoutTriggers<T>(db: Db, fn: () => Promise<T>): Promise<
 /** True when two timestamptz values are the same moment (compared by Postgres). */
 export async function sameMoment(db: Db, a: unknown, b: unknown): Promise<boolean> {
   return scalar<boolean>(db, "select $1::timestamptz = $2::timestamptz", [a, b])
+}
+
+/**
+ * Make `app.today_et()` return `date` until the test's transaction rolls back,
+ * to run rules that depend on the day (e.g. Sunday-only ones) on any day.
+ * now() keeps the real time: with a `date` in the future it is still early
+ * that day, and rows moved into the past (`now() - interval '3 hours'`) have
+ * already started.
+ */
+export async function pretendToday(db: Db, date: string): Promise<void> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Not a YYYY-MM-DD date: ${date}`)
+  await db.query(
+    `create or replace function app.today_et() returns date
+       language sql stable set search_path = ''
+       as $$ select ${escapeLiteral(date)}::date $$`,
+  )
 }
 
 /** An ET calendar day relative to today, as Postgres prints it (YYYY-MM-DD). */

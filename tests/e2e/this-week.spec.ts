@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
-import { addDays, daysBetween, formatDate, formatTime, todayEt } from "@/lib/dates"
+import { sentenceCase, sessionCountdown, sessionDateLabel } from "@/features/this-week/logic"
+import { addDays, formatDate, formatTime, relativeDay, todayEt } from "@/lib/dates"
 import { admin, cleanUpE2eRows, createOrgMeeting, createTask, e2eLabel } from "./support/admin"
 import { collectConsoleErrors, snap, waitForContent } from "./support/page"
 import { teammateFor } from "./support/team"
@@ -7,17 +8,12 @@ import { teammateFor } from "./support/team"
 /**
  * This Week (spec §6.1), signed in as the project's saved-session teammate (desktop: John,
  * phone: Ian). Data the page needs is written with the secret key and removed afterwards; the
- * Synthe6 schedule and the Sunday meeting are the seeded ones, read from the database.
+ * Synthe6 schedule and the Sunday meeting are the seeded ones, read from the database. Nothing
+ * assumes a weekday: expected labels come from the same helpers the cards use.
  */
 test.afterEach(cleanUpE2eRows)
 
 const section = (page: Page, name: string) => page.getByRole("region", { name, exact: true })
-
-/** "Today" / "Tomorrow" / "In 3 days": how the cards count down to a day. */
-function countdown(from: string, to: string): string {
-  const days = daysBetween(from, to)
-  return days === 0 ? "Today" : days === 1 ? "Tomorrow" : `In ${days} days`
-}
 
 test("my overdue task shows in My work and, in red, in Needs attention", async ({
   page,
@@ -67,7 +63,7 @@ test("the next Synthe6 session counts down, and the Sunday meeting names its fac
   const today = todayEt()
   const { data: session } = await admin
     .from("synthe6_sessions")
-    .select("week_label, start_date")
+    .select("week_label, start_date, end_date")
     .eq("is_break", false)
     .gte("end_date", today)
     .order("start_date")
@@ -80,15 +76,22 @@ test("the next Synthe6 session counts down, and the Sunday meeting names its fac
   await waitForContent(page)
   const sessionCard = section(page, "Next Synthe6 session")
   if (session.week_label) await expect(sessionCard.getByText(session.week_label)).toBeVisible()
-  await expect(sessionCard).toContainText(formatDate(session.start_date, "medium"))
-  await expect(sessionCard).toContainText(countdown(today, session.start_date))
+  await expect(sessionCard).toContainText(sessionDateLabel(session.start_date, session.end_date))
+  // "Today" on every day of a multi-day session, else "Tomorrow" / "In 3 days".
+  await expect(sessionCard).toContainText(
+    sentenceCase(sessionCountdown(session.start_date, session.end_date, today)),
+  )
   await expect(sessionCard.getByRole("link", { name: "Program" })).toHaveAttribute(
     "href",
     "/program",
   )
 
-  // The scheduled checks may move to next week's meeting at any time, so compare the card with
-  // what the database says now, reloading if it just changed.
+  // Run the scheduled checks once (pg_cron runs them every 15 minutes), so the next meeting
+  // exists however long ago they last ran. On a Sunday that is today's until it's held, then
+  // next week's. The checks may move on to next week's at any time, so compare the card with
+  // what the database says now (the card's own query), reloading if it just changed.
+  const checks = await admin.rpc("run_scheduled_checks")
+  if (checks.error) throw new Error(`The scheduled checks failed: ${checks.error.message}`)
   const meetingCard = section(page, "Next Sunday meeting")
   await expect(async () => {
     const { data: meeting, error } = await admin
@@ -98,8 +101,9 @@ test("the next Synthe6 session counts down, and the Sunday meeting names its fac
       .gte("meeting_date", today)
       .order("meeting_date")
       .limit(1)
-      .single()
+      .maybeSingle()
     if (error) throw new Error(`Reading the next Sunday meeting failed: ${error.message}`)
+    if (!meeting) throw new Error("No upcoming Sunday meeting, even after the scheduled checks")
     await page.reload()
     await waitForContent(page)
     const facilitating = meetingCard.getByText("Facilitating").locator("..")
@@ -108,7 +112,7 @@ test("the next Synthe6 session counts down, and the Sunday meeting names its fac
       `${formatDate(meeting.meeting_date, "medium")} · ${formatTime(meeting.starts_at)}`,
       { timeout: 2_000 },
     )
-    await expect(meetingCard).toContainText(countdown(today, meeting.meeting_date))
+    await expect(meetingCard).toContainText(sentenceCase(relativeDay(meeting.meeting_date, today)))
     await expect(meetingCard).toContainText(/\d of 6 posted/)
   }).toPass({ timeout: 20_000 })
   expect(errors).toEqual([])

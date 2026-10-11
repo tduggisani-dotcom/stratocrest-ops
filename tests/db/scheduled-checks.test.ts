@@ -13,6 +13,7 @@ import {
   lastLogFor,
   one,
   pastSunday,
+  pretendToday,
   rows,
   runScheduledChecks,
   sameMoment,
@@ -34,18 +35,6 @@ import {
  */
 
 afterAll(closeDb)
-
-/** Today's date until noon ET on a Sunday, otherwise the coming Sunday (computed independently). */
-async function nextMeetingDate(db: Db): Promise<string> {
-  return scalar<string>(
-    db,
-    `select (l::date + case
-               when extract(isodow from l) = 7 then case when l::time < '12:00' then 0 else 7 end
-               else 7 - extract(isodow from l)::int
-             end)::text
-       from (select now() at time zone 'America/New_York' as l) x`,
-  )
-}
 
 async function teamMeetings(db: Db) {
   return rows<{ id: string; meeting_date: string; facilitator_id: string; status: string }>(
@@ -76,14 +65,24 @@ async function dedupeRows(db: Db, event: string, ids: string[]) {
 }
 
 describe("next Sunday meeting", () => {
-  /** No meetings, the seeded team inactive, and three people of our own (the middle one inactive). */
+  /**
+   * No meetings, the seeded team inactive, and three people of our own (the
+   * middle one inactive). Today is pretended to be a Wednesday at least a week
+   * ahead, so the next meeting is that week's Sunday whatever the real clock
+   * says (on a real Sunday morning, today's meeting may already be held).
+   */
   async function rotation(db: Db) {
     await db.query("delete from public.team_meetings")
     await deactivateEveryone(db)
     const first = await createPerson(db, { name: "First In Rotation", sortOrder: 901 })
     const away = await createPerson(db, { name: "Away", sortOrder: 902, isActive: false })
     const last = await createPerson(db, { name: "Last In Rotation", sortOrder: 903 })
-    const target = await nextMeetingDate(db)
+    const wednesday = await scalar<string>(
+      db,
+      "select (d + (10 - extract(isodow from d)::int) % 7)::text from (select app.today_et() + 7 as d) x",
+    )
+    await pretendToday(db, wednesday)
+    const target = await scalar<string>(db, "select ($1::date + 4)::text", [wednesday])
     const lastWeek = await scalar<string>(db, "select ($1::date - 7)::text", [target])
     const previous = (facilitatorId: string) =>
       insert(db, "team_meetings", { meeting_date: lastWeek, facilitator_id: facilitatorId })
@@ -174,6 +173,126 @@ describe("next Sunday meeting", () => {
       expect(again).toEqual({ meetings_held: 0, debriefs_created: 0, events_queued: 0 })
       expect(await teamMeetings(db)).toEqual(before)
       expect(before.find((m) => m.meeting_date === target)?.facilitator_id).toBe(away.id)
+    })
+  })
+})
+
+describe("next Sunday meeting, once today's meeting is over", () => {
+  /**
+   * A Sunday morning: today is pretended to be a Sunday at least a week ahead,
+   * so it is still before noon there. No meetings yet; the seeded team is
+   * inactive, and the rotation is First, Away (inactive), Last.
+   */
+  async function sundayMorning(db: Db) {
+    const sunday = await scalar<string>(
+      db,
+      "select (d + (7 - extract(isodow from d)::int) % 7)::text from (select app.today_et() + 7 as d) x",
+    )
+    const nextSunday = await scalar<string>(db, "select ($1::date + 7)::text", [sunday])
+    await db.query("delete from public.team_meetings")
+    await deactivateEveryone(db)
+    const first = await createPerson(db, { name: "First In Rotation", sortOrder: 901 })
+    await createPerson(db, { name: "Away", sortOrder: 902, isActive: false })
+    const last = await createPerson(db, { name: "Last In Rotation", sortOrder: 903 })
+    await pretendToday(db, sunday)
+    const todaysMeeting = (facilitatorId: string, values: { starts_at?: Raw } = {}) =>
+      insert(db, "team_meetings", {
+        meeting_date: sunday,
+        facilitator_id: facilitatorId,
+        ...values,
+      })
+    return { sunday, nextSunday, first, last, todaysMeeting }
+  }
+
+  const ensureNextMeeting = (db: Db) =>
+    scalar<string | null>(db, "select app.ensure_next_team_meeting()")
+
+  /** The meeting This Week shows: the first upcoming one from today on (queries.ts). */
+  const shownOnThisWeek = (db: Db) =>
+    rows<{ meeting_date: string }>(
+      db,
+      `select meeting_date::text from public.team_meetings
+        where status = 'upcoming' and meeting_date >= app.today_et()
+        order by meeting_date limit 1`,
+    )
+
+  test("before noon, today's meeting is the next one while it is still upcoming", async () => {
+    await withTx(async (db) => {
+      const { sunday, first, todaysMeeting } = await sundayMorning(db)
+      // No meeting yet: today's is created.
+      const created = await ensureNextMeeting(db)
+      expect(await teamMeetings(db)).toEqual([
+        { id: created, meeting_date: sunday, facilitator_id: first.id, status: "upcoming" },
+      ])
+
+      await db.query("delete from public.team_meetings")
+      const existing = await todaysMeeting(first.id)
+      expect(await ensureNextMeeting(db)).toBe(existing.id)
+      expect(await teamMeetings(db)).toHaveLength(1)
+    })
+  })
+
+  test("once today's meeting is held, next Sunday's is created with the next facilitator", async () => {
+    await withTx(async (db) => {
+      const { sunday, nextSunday, first, last, todaysMeeting } = await sundayMorning(db)
+      const today = await todaysMeeting(first.id)
+      await update(db, "team_meetings", today.id, { status: "held" })
+
+      const next = await ensureNextMeeting(db)
+
+      // The person in between is inactive, so the rotation skips them.
+      expect(await teamMeetings(db)).toEqual([
+        { id: today.id, meeting_date: sunday, facilitator_id: first.id, status: "held" },
+        { id: next, meeting_date: nextSunday, facilitator_id: last.id, status: "upcoming" },
+      ])
+      expect(await shownOnThisWeek(db)).toEqual([{ meeting_date: nextSunday }])
+    })
+  })
+
+  test("a meeting canceled today rolls over too", async () => {
+    await withTx(async (db) => {
+      const { nextSunday, first, last, todaysMeeting } = await sundayMorning(db)
+      const today = await todaysMeeting(last.id)
+      await update(db, "team_meetings", today.id, { status: "canceled" })
+
+      const next = await ensureNextMeeting(db)
+
+      // Wraps around to the first active person after the last one.
+      expect((await teamMeetings(db)).find((m) => m.id === next)).toEqual({
+        id: next,
+        meeting_date: nextSunday,
+        facilitator_id: first.id,
+        status: "upcoming",
+      })
+      expect(await shownOnThisWeek(db)).toEqual([{ meeting_date: nextSunday }])
+    })
+  })
+
+  test("the run that marks today's meeting held also creates next Sunday's", async () => {
+    await withTx(async (db) => {
+      const { sunday, nextSunday, first, last, todaysMeeting } = await sundayMorning(db)
+      // It started just over two hours ago, and it's not noon yet.
+      const today = await todaysMeeting(first.id, {
+        starts_at: sql("now() - interval '2 hours 5 minutes'"),
+      })
+
+      const result = await runScheduledChecks(db)
+
+      expect(result.meetings_held).toBe(1)
+      expect(await teamMeetings(db)).toEqual([
+        { id: today.id, meeting_date: sunday, facilitator_id: first.id, status: "held" },
+        expect.objectContaining({
+          meeting_date: nextSunday,
+          facilitator_id: last.id,
+          status: "upcoming",
+        }),
+      ])
+      expect(await shownOnThisWeek(db)).toEqual([{ meeting_date: nextSunday }])
+
+      // Running again changes nothing.
+      const before = await teamMeetings(db)
+      expect((await runScheduledChecks(db)).meetings_held).toBe(0)
+      expect(await teamMeetings(db)).toEqual(before)
     })
   })
 })
