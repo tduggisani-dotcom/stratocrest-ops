@@ -299,13 +299,21 @@ export async function createPerson(
   })
 }
 
-/** A login. The trigger links it to the person with the same email, if any. */
-export async function createAuthUser(db: Db, email: string): Promise<string> {
+/**
+ * A login. A confirmed one (the default, like `pnpm seed` creates) is linked by the
+ * trigger to the person with the same email; an unconfirmed one is not.
+ */
+export async function createAuthUser(
+  db: Db,
+  email: string,
+  { confirmed = true }: { confirmed?: boolean } = {},
+): Promise<string> {
   return scalar<string>(
     db,
-    `insert into auth.users (id, email, aud, role)
-     values (gen_random_uuid(), $1, 'authenticated', 'authenticated') returning id`,
-    [email],
+    `insert into auth.users (id, email, aud, role, email_confirmed_at)
+     values (gen_random_uuid(), $1, 'authenticated', 'authenticated',
+             case when $2 then now() end) returning id`,
+    [email, confirmed],
   )
 }
 

@@ -81,6 +81,29 @@ describe("people, actors and logins", () => {
       expect(later.auth_user_id).toBe(earlyLogin)
     })
   })
+
+  test("an unconfirmed login is never linked, in either order, until it's confirmed", async () => {
+    await withTx(async (db) => {
+      // Someone signs up with a teammate's address before the person exists…
+      const email = `newhire-${uniqueSuffix()}@example.test`
+      const squatter = await createAuthUser(db, email, { confirmed: false })
+      const person = await createPerson(db, { email })
+      expect(person.auth_user_id).toBeNull()
+
+      // …or after.
+      const other = await createPerson(db)
+      const unconfirmed = await createAuthUser(db, other.email, { confirmed: false })
+      expect((await find(db, "people", other.id))?.auth_user_id).toBeNull()
+
+      // Confirming the email (the real owner clicked the link) links it.
+      await db.query("update auth.users set email_confirmed_at = now() where id = $1", [
+        unconfirmed,
+      ])
+      expect((await find(db, "people", other.id))?.auth_user_id).toBe(unconfirmed)
+      expect((await find(db, "people", person.id))?.auth_user_id).toBeNull()
+      expect(squatter).toBeTruthy()
+    })
+  })
 })
 
 describe("common columns and the acting actor", () => {

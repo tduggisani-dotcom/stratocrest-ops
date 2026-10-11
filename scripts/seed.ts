@@ -116,7 +116,18 @@ async function seedLogins(supabase: SeedClient, people: Seeded) {
   let linked = 0
 
   for (const person of people) {
-    let userId = userIds.get(person.email)
+    const existing = userIds.get(person.email)
+    if (existing && !existing.confirmed) {
+      // Someone may have signed up with this address before it was on the team. Don't adopt
+      // (or confirm) that login: a person deletes it after checking, then the seed creates a
+      // fresh confirmed one.
+      throw new Error(
+        `A login for ${maskEmail(person.email)} exists but was never confirmed, so it may not ` +
+          `belong to ${person.name}. Delete it in Supabase → Authentication → Users, then run ` +
+          `the seed again.`,
+      )
+    }
+    let userId = existing?.id
     if (!userId) {
       // Creating the login also links it to the person (database trigger).
       const { data, error } = await supabase.auth.admin.createUser({
@@ -144,15 +155,22 @@ async function seedLogins(supabase: SeedClient, people: Seeded) {
   console.log(`Logins: ${created} created, ${linked} re-linked, ${people.length} ready`)
 }
 
-/** email (lowercase) → auth user id, across every page of users. */
-async function listAuthUsers(supabase: SeedClient): Promise<Map<string, string>> {
+/** email (lowercase) → auth user id and whether its email is confirmed, across every page. */
+async function listAuthUsers(
+  supabase: SeedClient,
+): Promise<Map<string, { id: string; confirmed: boolean }>> {
   const perPage = 1000
-  const users = new Map<string, string>()
+  const users = new Map<string, { id: string; confirmed: boolean }>()
   for (let page = 1; ; page++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
     if (error) throw new Error(`Couldn't list logins: ${error.message}`)
     for (const user of data.users) {
-      if (user.email) users.set(user.email.toLowerCase(), user.id)
+      if (user.email) {
+        users.set(user.email.toLowerCase(), {
+          id: user.id,
+          confirmed: Boolean(user.email_confirmed_at),
+        })
+      }
     }
     if (data.users.length < perPage) return users
   }
