@@ -33,13 +33,18 @@ function subscribe(onChange: () => void) {
     if (readPreference() === "system") apply("system")
     onChange()
   }
+  // Another tab changed the theme: apply it here too, not just in the menu.
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY || event.key === null) apply(readPreference())
+    onChange()
+  }
   media.addEventListener("change", onSystemChange)
   window.addEventListener(EVENT, onChange)
-  window.addEventListener("storage", onChange)
+  window.addEventListener("storage", onStorage)
   return () => {
     media.removeEventListener("change", onSystemChange)
     window.removeEventListener(EVENT, onChange)
-    window.removeEventListener("storage", onChange)
+    window.removeEventListener("storage", onStorage)
   }
 }
 

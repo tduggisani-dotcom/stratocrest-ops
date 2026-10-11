@@ -126,7 +126,13 @@ type ServerClient = Awaited<ReturnType<typeof createClient>>
  */
 async function finishSignIn(supabase: ServerClient, next: Route): Promise<never> {
   // getCurrentPerson() reads the session cookies verifyOtp just set on this action.
-  const person = await getCurrentPerson()
+  let person: Awaited<ReturnType<typeof getCurrentPerson>>
+  try {
+    person = await getCurrentPerson()
+  } catch {
+    // Couldn't check right now (a database blip). Stay signed in: the page checks again.
+    redirect(next)
+  }
   if (!person) {
     await supabase.auth.signOut({ scope: "global" })
     redirect("/sign-in?reason=not-on-team")
