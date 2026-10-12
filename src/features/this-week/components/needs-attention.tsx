@@ -3,7 +3,8 @@ import { CircleCheck } from "lucide-react"
 import { DueDate } from "@/components/common/due-date"
 import { EmptyState } from "@/components/common/empty-state"
 import { PersonChip } from "@/components/common/person-chip"
-import { orgListHref, taskHref, tasksViewHref } from "@/features/tasks/links"
+import { orgHref } from "@/features/orgs/links"
+import { taskHref, tasksViewHref } from "@/features/tasks/links"
 import { requireTeamMember } from "@/lib/auth"
 import { debriefKindLabels, orgKindLabels } from "@/lib/labels"
 import { askedLabel, moreCount, staleLabel } from "../logic"
@@ -94,7 +95,7 @@ export async function NeedsAttentionSection() {
           {overdueFollowUps.items.map((org) => (
             <ItemRow
               key={org.id}
-              href={orgListHref(org.kind)}
+              href={orgHref(org.kind, org.id)}
               title={org.name}
               detail={
                 <>
@@ -122,7 +123,7 @@ export async function NeedsAttentionSection() {
           more={ORG_LINKS}
         >
           {staleOrgs.items.map((org) => (
-            <ItemRow key={org.id} href={orgListHref(org.kind)} title={org.name}>
+            <ItemRow key={org.id} href={orgHref(org.kind, org.id)} title={org.name}>
               <PersonChip person={org.owner} size="sm" />
               <span className="font-medium text-stale">
                 {staleLabel(org.daysSinceContact, org.lastContactDate)}

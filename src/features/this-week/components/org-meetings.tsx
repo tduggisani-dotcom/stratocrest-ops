@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/common/empty-state"
 import { PersonChip } from "@/components/common/person-chip"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { orgListHref } from "@/features/tasks/links"
+import { orgHref } from "@/features/orgs/links"
 import { requireTeamMember } from "@/lib/auth"
 import { formatDateTime, relativeDay, toEtDate } from "@/lib/dates"
 import { orgKindLabels } from "@/lib/labels"
@@ -59,7 +59,7 @@ export async function OrgMeetingsSection() {
             return (
               <ItemRow
                 key={meeting.id}
-                href={orgListHref(meeting.org.kind)}
+                href={orgHref(meeting.org.kind, meeting.org.id)}
                 title={meeting.org.name}
               >
                 <Badge variant="outline">{orgKindLabels[meeting.org.kind].singular}</Badge>

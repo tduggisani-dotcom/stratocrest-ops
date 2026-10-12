@@ -4,7 +4,8 @@ import { DueDate } from "@/components/common/due-date"
 import { EmptyState } from "@/components/common/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { newTaskHref, orgListHref, taskHref, tasksViewHref } from "@/features/tasks/links"
+import { orgHref } from "@/features/orgs/links"
+import { newTaskHref, taskHref, tasksViewHref } from "@/features/tasks/links"
 import { requireTeamMember } from "@/lib/auth"
 import { debriefKindLabels, orgKindLabels, taskStatusLabels } from "@/lib/labels"
 import { moreCount } from "../logic"
@@ -123,7 +124,7 @@ export async function MyWorkSection() {
         {followUps.items.map((org) => (
           <ItemRow
             key={org.id}
-            href={orgListHref(org.kind)}
+            href={orgHref(org.kind, org.id)}
             title={org.name}
             detail={
               <>

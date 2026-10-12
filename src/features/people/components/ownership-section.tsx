@@ -5,7 +5,8 @@ import { firstNameOf } from "@/components/common/person-chip"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { OwnedKeyResult, OwnedOrg, OwnedTask } from "@/features/people/queries"
-import { newTaskHref, orgListHref, taskHref } from "@/features/tasks/links"
+import { orgHref } from "@/features/orgs/links"
+import { newTaskHref, taskHref } from "@/features/tasks/links"
 import type { IsoDate } from "@/lib/dates"
 import { orgKindLabels, taskStatusLabels } from "@/lib/labels"
 import { krPercent, krProgressText } from "@/lib/okr"
@@ -93,7 +94,7 @@ export function OwnershipSection({
             <ul aria-labelledby="owns-orgs" className="divide-y">
               {orgs.map((org) => (
                 <li key={org.id}>
-                  <Link href={orgListHref(org.kind)} className={ROW}>
+                  <Link href={orgHref(org.kind, org.id)} className={ROW}>
                     <span className="min-w-0">
                       <span className="block font-medium break-words">{org.name}</span>
                       <span className="block text-xs text-muted-foreground">

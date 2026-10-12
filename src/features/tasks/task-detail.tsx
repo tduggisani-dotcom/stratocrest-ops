@@ -16,6 +16,7 @@ import {
 import { DueDate } from "@/components/common/due-date"
 import { PersonChip } from "@/components/common/person-chip"
 import { Badge } from "@/components/ui/badge"
+import { meetingHref, orgHref } from "@/features/orgs/links"
 import { requireTeamMember } from "@/lib/auth"
 import { crunchPeriodsCovering, crunchWarning } from "@/lib/crunch"
 import { formatDate, formatDateTime, todayEt, type IsoDate } from "@/lib/dates"
@@ -28,7 +29,6 @@ import {
 import { taskIdSchema } from "@/lib/schemas/tasks"
 import { ArchiveTaskButton, RestoreTaskButton } from "./archive-buttons"
 import { CrunchNote } from "./crunch-note"
-import { orgListHref } from "./links"
 import { orgMeetingLabel, teamMeetingLabel, withCurrent, type TaskFormOptions } from "./options"
 import { getTask, getTaskFormOptions, type TaskActor, type TaskDetail } from "./queries"
 import { TaskForm, type TaskFormDefaults } from "./task-form"
@@ -162,7 +162,7 @@ function TaskLinks({ task, today }: { task: TaskDetail; today: IsoDate }) {
   if (organization) {
     items.push({
       key: "org",
-      href: orgListHref(organization.kind),
+      href: orgHref(organization.kind, organization.id),
       icon: Building2,
       kind: orgKindLabels[organization.kind].singular,
       label: organization.archived ? `${organization.name} (archived)` : organization.name,
@@ -199,7 +199,9 @@ function TaskLinks({ task, today }: { task: TaskDetail; today: IsoDate }) {
   if (orgMeeting) {
     items.push({
       key: "org-meeting",
-      href: orgMeeting.org ? orgListHref(orgMeeting.org.kind) : "/investors",
+      href: orgMeeting.org
+        ? meetingHref(orgMeeting.org.kind, orgMeeting.org.id, orgMeeting.id)
+        : "/investors",
       icon: Handshake,
       kind: orgMeeting.org ? `${orgKindLabels[orgMeeting.org.kind].singular} meeting` : "Meeting",
       label: orgMeeting.org

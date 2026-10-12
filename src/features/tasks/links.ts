@@ -1,7 +1,6 @@
 import type { Route } from "next"
 import type { IsoDate } from "@/lib/dates"
 import { DEFAULT_NEXT_PATH, safeNextPath } from "@/lib/schemas/auth"
-import type { Database } from "@/types/database"
 import type { TaskView } from "./views"
 
 /** URLs into and out of the Tasks section, in one place (typedRoutes checks the paths). */
@@ -49,10 +48,8 @@ export function newTaskHref(prefill: NewTaskPrefill = {}): Route {
   return search ? `/tasks/new?${search}` : "/tasks/new"
 }
 
-/** Orgs live in two lists that share one implementation; link to the right one. */
-export function orgListHref(kind: Database["public"]["Enums"]["org_kind"]): Route {
-  return kind === "investor" ? "/investors" : "/customers"
-}
+/** Orgs live in two lists that share one implementation (src/features/orgs/links.ts). */
+export { orgListHref } from "@/features/orgs/links"
 
 /**
  * Where the new-task form goes after saving (its `return_to`): a same-site path
