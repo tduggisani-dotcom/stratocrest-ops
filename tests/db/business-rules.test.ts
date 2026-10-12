@@ -266,8 +266,9 @@ describe("org meetings", () => {
         })
         // Derived, not copied: the stored column only holds contact entered by hand.
         expect((await find(db, "organizations", org.id))?.last_contact_date, kind).toBeNull()
+        // Logged long after it happened: due today, not overdue since 3 July.
         expect(await debriefsFor(db, meeting.id), kind).toEqual([
-          { kind, due_date: "2025-07-03", facilitator_id: owner.id, status: "due" },
+          { kind, due_date: await dayFromToday(db, 0), facilitator_id: owner.id, status: "due" },
         ])
       }
     })
@@ -316,8 +317,14 @@ describe("org meetings", () => {
       })
       const yesterday = await dayFromToday(db, -1)
       expect((await contactOf(db, org.id))?.last_contact_date).toBe(yesterday)
+      // Opened today for yesterday's meeting: due today.
       expect(await debriefsFor(db, meeting.id)).toEqual([
-        { kind: "customer", due_date: yesterday, facilitator_id: owner.id, status: "due" },
+        {
+          kind: "customer",
+          due_date: await dayFromToday(db, 0),
+          facilitator_id: owner.id,
+          status: "due",
+        },
       ])
 
       // Editing the meeting again doesn't create a second debrief.
@@ -355,12 +362,26 @@ describe("org meetings", () => {
       const org = await createOrg(db, { owner_id: owner.id })
       const meeting = await createOrgMeeting(db, {
         organization_id: org.id,
-        starts_at: sql("app.et_moment(app.today_et() - 1, '10:00')"),
+        starts_at: sql("app.et_moment(app.today_et() - 5, '10:00')"),
       })
+      // As if logged on the day, 5 days ago (created_at is trigger-protected).
+      await withoutTriggers(db, () =>
+        db.query(
+          `update public.debriefs set created_at = now() - interval '5 days',
+             due_date = app.today_et() - 5 where org_meeting_id = $1`,
+          [meeting.id],
+        ),
+      )
       await update(db, "org_meetings", meeting.id, {
         starts_at: sql("app.et_moment(app.today_et() - 3, '10:00')"),
       })
       expect((await debriefsFor(db, meeting.id))[0]?.due_date).toBe(await dayFromToday(db, -3))
+
+      // Never due before the day it was opened.
+      await update(db, "org_meetings", meeting.id, {
+        starts_at: sql("app.et_moment(app.today_et() - 8, '10:00')"),
+      })
+      expect((await debriefsFor(db, meeting.id))[0]?.due_date).toBe(await dayFromToday(db, -5))
 
       // Someone starts the debrief; moving the meeting into the future no longer removes it.
       await db.query(

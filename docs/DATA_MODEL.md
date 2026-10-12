@@ -380,7 +380,7 @@ Triggers:
 1. **Common columns:** sets `updated_at`, `created_by` and `updated_by` from the current actor.
 2. **Audit:** after insert, update or delete on every business table, writes to `activity_log` (before, after, and changed fields). No-op updates are skipped.
 3. **Tasks:** fills or clears `completed_at`.
-4. **Org meetings:** queue `org_meeting.logged`, and create the debrief (status `due`, due that day, facilitated by the org owner) once the meeting time has passed. A debrief nobody has started follows its meeting: it is removed if the meeting moves into the future, re-dated if it moves to another day, and handed to the new owner if it moves to another org.
+4. **Org meetings:** queue `org_meeting.logged`, and create the debrief (status `due`, facilitated by the org owner) once the meeting time has passed. It is due on the meeting day, or on the day it was opened if that's later, so a meeting logged after the fact isn't overdue on arrival. A debrief nobody has started follows its meeting: it is removed if the meeting moves into the future, re-dated if it moves to another day, and handed to the new owner if it moves to another org.
 5. **Organizations:** queue `org.created` on insert and `org.stage_changed` (from → to) when the stage changes. An org's `kind` can't change after it is created.
 6. **Help requests:** queue `help_request.created`.
 7. **Hypotheses:** copy `audience` from the linked org.

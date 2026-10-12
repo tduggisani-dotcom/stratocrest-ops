@@ -462,8 +462,9 @@ describe("automatic debriefs", () => {
       await runScheduledChecks(db)
 
       const twoDaysAgo = await dayFromToday(db, -2)
+      // Opened by this run (normally within 15 minutes of the meeting): due today.
       expect(await debriefs(db, "org_meeting_id", ahead.id)).toEqual([
-        { kind: "customer", due_date: twoDaysAgo, facilitator_id: owner.id, status: "due" },
+        { kind: "customer", due_date: today, facilitator_id: owner.id, status: "due" },
       ])
       const contact = await rows<{ id: string; last_contact_date: string | null }>(
         db,

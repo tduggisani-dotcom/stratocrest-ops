@@ -275,12 +275,14 @@ describe("log_org_meeting", () => {
         p_starts_at: expr("now() - interval '2 hours'"),
         p_attendee_ids: [mate.id],
       })
-      const pastDay = await scalar<string>(
-        db,
-        "select ((now() - interval '2 hours') at time zone 'America/New_York')::date::text",
-      )
+      // Due on the meeting day, but never before the day it was opened: today.
       expect(await debriefOf(db, past)).toEqual([
-        { kind: "investor", due_date: pastDay, facilitator_id: me.id, status: "due" },
+        {
+          kind: "investor",
+          due_date: await dayFromToday(db, 0),
+          facilitator_id: me.id,
+          status: "due",
+        },
       ])
 
       const future = await logMeeting(db, {
@@ -379,6 +381,74 @@ describe("log_org_meeting", () => {
       expect(await meetingsOf(db, org.id)).toBe(2)
       expect(await debriefOf(db, started)).toHaveLength(1)
       expect(await debriefOf(db, followedUp)).toHaveLength(1)
+    })
+  })
+})
+
+describe("the debrief of a meeting logged after the fact", () => {
+  test("is due today, not overdue from the day it happened", async () => {
+    await withTx(async (db) => {
+      const { me, mate, org } = await setup(db)
+      const meeting = await logMeeting(db, {
+        p_organization_id: org.id,
+        p_starts_at: expr("now() - interval '3 days'"),
+        p_attendee_ids: [mate.id],
+      })
+      expect(await debriefOf(db, meeting)).toEqual([
+        {
+          kind: "investor",
+          due_date: await dayFromToday(db, 0),
+          facilitator_id: me.id,
+          status: "due",
+        },
+      ])
+    })
+  })
+
+  test("stays due today when the meeting's time is corrected", async () => {
+    await withTx(async (db) => {
+      const { mate, org } = await setup(db)
+      const meeting = await logMeeting(db, {
+        p_organization_id: org.id,
+        p_starts_at: expr("now() - interval '3 days'"),
+        p_attendee_ids: [mate.id],
+      })
+      await updateMeeting(db, {
+        p_meeting_id: meeting,
+        p_starts_at: expr("now() - interval '3 days' - interval '1 hour'"),
+        p_attendee_ids: [mate.id],
+      })
+      const [debrief] = await debriefOf(db, meeting)
+      expect(debrief?.due_date).toBe(await dayFromToday(db, 0))
+    })
+  })
+
+  test("is never moved before the day it was opened", async () => {
+    await withTx(async (db) => {
+      const { me, mate, org } = await setup(db)
+      const meeting = await logMeeting(db, {
+        p_organization_id: org.id,
+        p_starts_at: expr("now() - interval '1 hour'"),
+        p_attendee_ids: [mate.id],
+      })
+      // A debrief opened 5 days ago (created_at is trigger-protected, so set it
+      // as the owner with triggers off).
+      await resetRole(db)
+      await db.query("set local session_replication_role = replica")
+      await db.query(
+        `update public.debriefs set created_at = now() - interval '5 days',
+           due_date = app.today_et() - 5 where org_meeting_id = $1`,
+        [meeting],
+      )
+      await db.query("set local session_replication_role = origin")
+      await actAs(db, me.authUserId)
+
+      await db.query(
+        "update public.debriefs set due_date = app.today_et() - 7 where org_meeting_id = $1",
+        [meeting],
+      )
+      const [debrief] = await debriefOf(db, meeting)
+      expect(debrief?.due_date).toBe(await dayFromToday(db, -5))
     })
   })
 })
