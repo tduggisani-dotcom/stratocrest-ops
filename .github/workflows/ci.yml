@@ -1,0 +1,212 @@
+# Automatic checks. GitHub runs this on every push and every pull request, and shows a green tick
+# (all good) or a red cross (something broke) next to the commit. Click the cross, then the job with
+# the cross, to see which step failed and why.
+#
+# No secrets needed: the database and end-to-end jobs start a throwaway local copy of Supabase (in
+# Docker) that exists only while the job runs. Nothing here touches the dev or production projects.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A newer push to the same branch cancels the older checks that are still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only: these checks never change the repository.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Explicit bash turns on "pipefail", so a failure inside a pipe fails the step.
+    shell: bash
+
+jobs:
+  # 1. Code checks: types, lint rules, formatting and unit tests. Takes a couple of minutes.
+  checks:
+    name: Typecheck, lint, format, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      # Uses the pnpm version pinned in package.json ("packageManager").
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (exactly as locked)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting (fix it locally with "pnpm format")
+        run: pnpm format:check
+
+      - name: Unit tests
+        run: pnpm test
+
+  # 2. Database: starts a local Supabase, which applies every migration from scratch (so a broken
+  #    migration fails here), then runs the security (RLS), trigger and view tests against it.
+  #    Also checks that src/types/database.ts was regenerated after the last schema change.
+  database:
+    name: Database (migrations, RLS, triggers, types)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (exactly as locked)
+        run: pnpm install --frozen-lockfile
+
+      # Same command as on a laptop. It fails if any migration has an error.
+      - name: Start local Supabase and apply migrations
+        id: supabase
+        run: pnpm db:start
+
+      # The tests connect to the local database at 127.0.0.1:54322 (see tests/db/helpers.ts).
+      - name: Database tests (RLS, triggers, views)
+        run: pnpm test:db
+
+      # Runs even if the tests failed, so one run reports both problems.
+      - name: Check generated database types are up to date
+        if: ${{ !cancelled() && steps.supabase.outcome == 'success' }}
+        run: |
+          # Written inside the repository so Prettier uses the project's .prettierrc.json, exactly
+          # like "pnpm db:types" does.
+          generated="src/types/database.ci-check.ts"
+          trap 'rm -f "$generated"' EXIT
+          pnpm exec supabase gen types typescript --local --schema public > "$generated"
+          pnpm exec prettier --write "$generated" > /dev/null
+          if ! diff -u src/types/database.ts "$generated"; then
+            echo "::error file=src/types/database.ts::src/types/database.ts doesn't match the migrations. On your computer run \"pnpm db:start\" then \"pnpm db:types\", and commit the updated src/types/database.ts. (The lines above starting with + are what it should contain.)"
+            exit 1
+          fi
+          echo "src/types/database.ts matches the migrations."
+
+  # 3. End-to-end: builds the real app, signs in the way a person would (reading the 6-digit code
+  #    from the local test mailbox, Mailpit) and clicks through the main flows, on a desktop screen
+  #    and on a 390 px phone screen. Slowest job, so it only starts once the code checks pass.
+  e2e:
+    name: End-to-end (desktop + 390 px phone)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Playwright builds the app and starts it on port 3100 itself (see playwright.config.ts).
+      NEXT_PUBLIC_SITE_URL: http://localhost:3100
+      APP_ENV: development
+      NEXT_TELEMETRY_DISABLED: 1
+      # Placeholder addresses: sign-in emails never leave the local test mailbox.
+      TEAM_EMAILS: "John LaRocco <john@example.com>, Taeyoon Eom <taeyoon@example.com>, Brad Hall <brad@example.com>, Sam Browning <sam@example.com>, Ian Zalcberg <ian@example.com>, Tanush <tanush@example.com>"
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (exactly as locked)
+        run: pnpm install --frozen-lockfile
+
+      - name: Start local Supabase and apply migrations
+        run: pnpm db:start
+
+      # Gives the app, the seed script and the tests the local Supabase address and keys. They are
+      # the well-known keys of a throwaway local stack, but the secret one is still hidden in logs.
+      - name: Point the app at local Supabase
+        run: |
+          # Prints lines such as API_URL="http://127.0.0.1:54321".
+          status_file="$RUNNER_TEMP/supabase-status.env"
+          pnpm exec supabase status -o env > "$status_file"
+
+          # copy NAME_IN_STATUS NAME_FOR_APP: copies one value, without its quotes, into the
+          # environment of every later step.
+          copy() {
+            local value
+            value=$(sed -n -E "s/^$1=\"?([^\"]*)\"?\$/\1/p" "$status_file")
+            if [ -z "$value" ]; then
+              echo "::error::\"supabase status -o env\" didn't print $1 (needed for $2). It printed: $(cut -d= -f1 "$status_file" | paste -sd ' ')"
+              exit 1
+            fi
+            if [ "$1" = "SECRET_KEY" ]; then
+              echo "::add-mask::$value"
+            fi
+            echo "$2=$value" >> "$GITHUB_ENV"
+          }
+
+          copy API_URL NEXT_PUBLIC_SUPABASE_URL
+          copy PUBLISHABLE_KEY NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+          copy SECRET_KEY SUPABASE_SECRET_KEY
+          copy DB_URL DATABASE_URL
+          copy MAILPIT_URL MAILPIT_URL
+
+      # The six people and their logins, the Synthe6 schedule, quarters and checklist templates.
+      - name: Seed the local database
+        run: pnpm seed
+
+      - name: Install Playwright's Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Reuses Next.js's build cache from earlier runs, so building the app is faster.
+      - name: Restore the Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('src/**', 'public/**', 'next.config.ts') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - name: End-to-end tests
+        run: pnpm test:e2e
+
+      # If this job fails, download these from the bottom of the run's Summary page. Open
+      # index.html in playwright-report to see each failing step with screenshots and a trace.
+      - name: Upload Playwright report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload test results (screenshots and traces)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore
