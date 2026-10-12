@@ -2510,8 +2510,44 @@ export type Database = {
       }
     }
     Functions: {
+      log_org_meeting: {
+        Args: {
+          p_attendee_ids?: string[]
+          p_concerns_raised?: string
+          p_external_attendees?: string
+          p_follow_up_date?: string
+          p_follow_up_owner_id?: string
+          p_materials_requested?: string
+          p_next_step?: string
+          p_next_step_date?: string
+          p_notes?: string
+          p_organization_id: string
+          p_rating?: number
+          p_starts_at: string
+          p_summary?: string
+        }
+        Returns: string
+      }
       run_scheduled_checks: { Args: Record<PropertyKey, never>; Returns: Json }
       undo_activity: { Args: { p_force?: boolean; p_log_id: number }; Returns: undefined }
+      update_org_meeting: {
+        Args: {
+          p_attendee_ids?: string[]
+          p_concerns_raised?: string
+          p_external_attendees?: string
+          p_follow_up_date?: string
+          p_follow_up_owner_id?: string
+          p_materials_requested?: string
+          p_meeting_id: string
+          p_next_step?: string
+          p_next_step_date?: string
+          p_notes?: string
+          p_rating?: number
+          p_starts_at: string
+          p_summary?: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       actor_kind: "person" | "bot"
