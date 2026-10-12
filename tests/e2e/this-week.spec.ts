@@ -127,7 +127,7 @@ test("an investor meeting in the next 7 days shows with who's going", async ({
   const name = e2eLabel("Ridge Capital")
   const startsAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
   startsAt.setUTCMinutes(0, 0, 0)
-  await createOrgMeeting({
+  const { orgId } = await createOrgMeeting({
     name,
     ownerId: me.id,
     nextStepDate: addDays(today, 30),
@@ -151,7 +151,8 @@ test("an investor meeting in the next 7 days shows with who's going", async ({
   // Nobody is listed as going, so the card shows the org's owner.
   await expect(row).toContainText("Owner:")
   await expect(row).toContainText(me.name)
-  await expect(row.getByRole("link")).toHaveAttribute("href", "/investors")
+  // The row opens the investor's own page.
+  await expect(row.getByRole("link")).toHaveAttribute("href", `/investors/${orgId}`)
 
   await snap(page, testInfo, "this-week-data-light", { fullPage: true })
   await page.emulateMedia({ colorScheme: "dark" })

@@ -42,6 +42,7 @@ function ok(result: Result<unknown>, what: string): void {
 const MARKED_COLUMNS = {
   tasks: "title",
   organizations: "name",
+  hypotheses: "statement",
   crunch_periods: "label",
   availability_blocks: "note",
 } as const
@@ -51,9 +52,11 @@ const MARKED_COLUMNS = {
  * removed now, and by content for rows the UI already deleted (a removed busy time).
  */
 async function forgetRows(ids: string[]): Promise<void> {
-  if (ids.length > 0) {
-    ok(await admin.from("activity_log").delete().in("entity_id", ids), "Deleting audit rows")
-    ok(await admin.from("event_dedupe").delete().in("entity_id", ids), "Deleting event markers")
+  // In batches, so the ids fit in a request URL.
+  for (let start = 0; start < ids.length; start += 100) {
+    const batch = ids.slice(start, start + 100)
+    ok(await admin.from("activity_log").delete().in("entity_id", batch), "Deleting audit rows")
+    ok(await admin.from("event_dedupe").delete().in("entity_id", batch), "Deleting event markers")
   }
   for (const [table, column] of Object.entries(MARKED_COLUMNS)) {
     ok(
@@ -67,26 +70,83 @@ async function forgetRows(ids: string[]): Promise<void> {
   }
 }
 
+/** The ids of `table` rows whose `column` is one of `values` (none when `values` is empty). */
+async function idsWhere(
+  table: "org_meetings" | "org_meeting_attendees" | "debriefs" | "hypotheses" | "hypothesis_tests",
+  column: string,
+  values: string[],
+): Promise<string[]> {
+  if (values.length === 0) return []
+  const rows = check<{ id: string }[]>(
+    await admin.from(table).select("id").in(column, values),
+    `Reading [e2e] ${table}`,
+  )
+  return rows.map((row) => row.id)
+}
+
 /**
- * Remove every `[e2e]` row: tasks, investor/customer meetings and orgs, crunch periods and
- * busy times, plus their audit rows. Safe to run any time (and twice).
+ * Remove every `[e2e]` row and everything hanging off it, in an order the foreign keys allow:
+ * tasks (marked, or linked to an [e2e] org or meeting, like a meeting's follow-up task),
+ * hypotheses and their evidence, investor/customer meetings with their attendees and debriefs,
+ * the orgs, crunch periods and busy times, then the audit rows and event markers of all of
+ * them. Safe to run any time (and twice); never touches seed or [DEMO] rows.
  */
 export async function cleanUpE2eRows(): Promise<void> {
-  const tasks = check(
-    await admin.from("tasks").delete().like("title", MARKED).select("id"),
-    "Deleting [e2e] tasks",
-  )
   const orgs = check(
     await admin.from("organizations").select("id").like("name", MARKED),
     "Reading [e2e] orgs",
   )
   const orgIds = orgs.map((o) => o.id)
-  const meetings = orgIds.length
+  const meetingIds = await idsWhere("org_meetings", "organization_id", orgIds)
+  const attendeeIds = await idsWhere("org_meeting_attendees", "org_meeting_id", meetingIds)
+  const debriefIds = await idsWhere("debriefs", "org_meeting_id", meetingIds)
+  const markedHypotheses = check(
+    await admin.from("hypotheses").select("id").like("statement", MARKED),
+    "Reading [e2e] hypotheses",
+  )
+  const hypothesisIds = [
+    ...new Set([
+      ...markedHypotheses.map((h) => h.id),
+      ...(await idsWhere("hypotheses", "organization_id", orgIds)),
+    ]),
+  ]
+  const testIds = [
+    ...new Set([
+      ...(await idsWhere("hypothesis_tests", "hypothesis_id", hypothesisIds)),
+      ...(await idsWhere("hypothesis_tests", "org_meeting_id", meetingIds)),
+    ]),
+  ]
+
+  const tasks = check(
+    await admin.from("tasks").delete().like("title", MARKED).select("id"),
+    "Deleting [e2e] tasks",
+  )
+  const linkedTasks = orgIds.length
     ? check(
-        await admin.from("org_meetings").delete().in("organization_id", orgIds).select("id"),
-        "Deleting [e2e] org meetings",
+        await admin
+          .from("tasks")
+          .delete()
+          .or(
+            `organization_id.in.(${orgIds.join(",")})` +
+              (meetingIds.length ? `,org_meeting_id.in.(${meetingIds.join(",")})` : ""),
+          )
+          .select("id"),
+        "Deleting tasks linked to [e2e] orgs",
       )
     : []
+  if (testIds.length) {
+    ok(await admin.from("hypothesis_tests").delete().in("id", testIds), "Deleting [e2e] evidence")
+  }
+  if (hypothesisIds.length) {
+    ok(await admin.from("hypotheses").delete().in("id", hypothesisIds), "Deleting [e2e] hypotheses")
+  }
+  // Attendees and debriefs go with their meeting (ON DELETE CASCADE).
+  if (meetingIds.length) {
+    ok(
+      await admin.from("org_meetings").delete().in("id", meetingIds),
+      "Deleting [e2e] org meetings",
+    )
+  }
   if (orgIds.length) {
     ok(await admin.from("organizations").delete().in("id", orgIds), "Deleting [e2e] orgs")
   }
@@ -100,8 +160,13 @@ export async function cleanUpE2eRows(): Promise<void> {
   )
   await forgetRows([
     ...tasks.map((r) => r.id),
+    ...linkedTasks.map((r) => r.id),
     ...orgIds,
-    ...meetings.map((r) => r.id),
+    ...meetingIds,
+    ...attendeeIds,
+    ...debriefIds,
+    ...hypothesisIds,
+    ...testIds,
     ...crunch.map((r) => r.id),
     ...blocks.map((r) => r.id),
   ])
@@ -220,4 +285,93 @@ export async function createOrgMeeting({
     "Adding an [e2e] org meeting",
   )
   return { orgId: org.id, meetingId: meeting.id }
+}
+
+type OrgKind = Tables<"organizations">["kind"]
+
+/** An `[e2e]` investor or customer written straight to the database (stage: the first one). */
+export async function createOrg(
+  fields: Pick<Tables<"organizations">, "kind" | "name" | "owner_id" | "next_step_date"> &
+    Partial<
+      Pick<
+        Tables<"organizations">,
+        | "next_step"
+        | "stage"
+        | "region"
+        | "city"
+        | "subtype"
+        | "contact_name"
+        | "contact_email"
+        | "link"
+      >
+    >,
+): Promise<{ id: string }> {
+  if (!fields.name.startsWith(E2E)) throw new Error(`Test org names start with ${E2E}`)
+  return check<{ id: string }>(
+    await admin
+      .from("organizations")
+      .insert({ next_step: "Send the e2e deck", ...fields })
+      .select("id")
+      .single(),
+    "Adding an [e2e] org",
+  )
+}
+
+/** A meeting with an `[e2e]` org; one that has happened gets its debrief from the database. */
+export async function createMeeting(
+  fields: Pick<Tables<"org_meetings">, "organization_id" | "starts_at"> &
+    Partial<Pick<Tables<"org_meetings">, "rating" | "summary">>,
+  attendeeIds: string[] = [],
+): Promise<{ id: string }> {
+  const meeting = check<{ id: string }>(
+    await admin.from("org_meetings").insert(fields).select("id").single(),
+    "Adding an [e2e] org meeting",
+  )
+  if (attendeeIds.length) {
+    ok(
+      await admin
+        .from("org_meeting_attendees")
+        .insert(attendeeIds.map((person_id) => ({ org_meeting_id: meeting.id, person_id }))),
+      "Adding [e2e] meeting attendees",
+    )
+  }
+  return meeting
+}
+
+/** An org as the database has it now. */
+export async function readOrg(id: string): Promise<Tables<"organizations">> {
+  return check<Tables<"organizations">>(
+    await admin.from("organizations").select("*").eq("id", id).single(),
+    "Reading an [e2e] org",
+  )
+}
+
+/** The id of the `[e2e]` org called `name` (of `kind`). */
+export async function orgIdByName(kind: OrgKind, name: string): Promise<string> {
+  return check<{ id: string }>(
+    await admin.from("organizations").select("id").eq("kind", kind).eq("name", name).single(),
+    `Reading the ${kind} "${name}"`,
+  ).id
+}
+
+/** An `[e2e]` hypothesis (about one org, or across many of `audience`), with optional evidence. */
+export async function createHypothesis(
+  fields: Pick<Tables<"hypotheses">, "statement"> &
+    Partial<Pick<Tables<"hypotheses">, "organization_id" | "audience" | "owner_id" | "status">>,
+  evidence: Pick<Tables<"hypothesis_tests">, "test_date" | "outcome" | "evidence">[] = [],
+): Promise<{ id: string }> {
+  if (!fields.statement.startsWith(E2E)) throw new Error(`Test hypotheses start with ${E2E}`)
+  const hypothesis = check<{ id: string }>(
+    await admin.from("hypotheses").insert(fields).select("id").single(),
+    "Adding an [e2e] hypothesis",
+  )
+  if (evidence.length) {
+    ok(
+      await admin
+        .from("hypothesis_tests")
+        .insert(evidence.map((test) => ({ ...test, hypothesis_id: hypothesis.id }))),
+      "Adding [e2e] evidence",
+    )
+  }
+  return hypothesis
 }
